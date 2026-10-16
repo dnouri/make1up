@@ -1,5 +1,5 @@
 import { palette, themes, tools } from "./look";
-import type { Criterion, PaletteId, Region, Result, Stroke, Theme, ThemeId } from "./look";
+import type { Criterion, PaletteId, Region, Result, Stroke, StrokePath, Theme, ThemeId } from "./look";
 
 export type PaintMasks = Readonly<{
   size: number;
@@ -13,6 +13,18 @@ export type PaintField = Readonly<{
   rgba: Uint8ClampedArray;
   finish: Uint8Array;
 }>;
+export type ChangedPaint = Readonly<{
+  kind: "changed";
+  stroke: Stroke;
+  base: PaintField;
+  field: PaintField;
+}>;
+export type FinishedPaint = ChangedPaint | Readonly<{ kind: "unchanged"; stroke: Stroke }>;
+export interface StrokeTransaction {
+  /** The preview is borrowed until finish transfers its ownership. */
+  update(stroke: Stroke): PaintField | null;
+  finish(stroke: Stroke): FinishedPaint;
+}
 export type PaintAnalysis = Readonly<{
   alphaMass: number;
   coverage: Readonly<Record<Region, number>>;
@@ -74,7 +86,35 @@ function blankField(size: number): PaintField {
   });
 }
 
+function copyField(field: PaintField): PaintField {
+  return Object.freeze({ size: field.size, rgba: field.rgba.slice(), finish: field.finish.slice() });
+}
+
 type Bounds = { left: number; top: number; right: number; bottom: number };
+type PaintEffect = { changed: boolean; differentPixels: number };
+type SoftenScratch = {
+  kind: "soften";
+  pixels: Uint32Array;
+  remaining: number[];
+  support: number;
+  spacing: number;
+  horizontal: Float64Array;
+  sums: Float64Array;
+  row: Float64Array;
+};
+type RasterScratch = { kind: "coverage"; pixels: Uint8Array } | SoftenScratch;
+type StrokeScratch = PaintEffect & {
+  output: PaintField;
+  raster: RasterScratch;
+  previous: Stroke | null;
+};
+type TransactionState = { kind: "unstarted" }
+  | { kind: "open"; scratch: StrokeScratch }
+  | { kind: "finished"; result: FinishedPaint };
+
+function emptyBounds(size: number): Bounds {
+  return { left: size, top: size, right: -1, bottom: -1 };
+}
 
 function inStar(x: number, y: number): boolean {
   let inside = false;
@@ -96,7 +136,7 @@ function inStar(x: number, y: number): boolean {
 }
 
 function drawTip(
-  coverage: Uint8Array,
+  coverage: Uint8Array | Uint32Array,
   bounds: Bounds,
   stroke: Stroke,
   masks: PaintMasks,
@@ -113,10 +153,6 @@ function drawTip(
   const top = Math.max(border, Math.floor(centerY - radius));
   const bottom = Math.min(size - border - 1, Math.ceil(centerY + radius));
   const hardRadius = 1 - stroke.brush.softness;
-  bounds.left = Math.min(bounds.left, left);
-  bounds.right = Math.max(bounds.right, right);
-  bounds.top = Math.min(bounds.top, top);
-  bounds.bottom = Math.max(bounds.bottom, bottom);
   for (let y = top; y <= bottom; y += 1) {
     for (let x = left; x <= right; x += 1) {
       const dx = (x + 0.5 - centerX) / radius;
@@ -133,35 +169,53 @@ function drawTip(
       const valid = (masks.valid[index] ?? 0) / 255;
       const region = tool.region === "valid" ? 1 : (masks[tool.region][index] ?? 0) / 255;
       const amount = Math.round(strength * valid * region * 255);
-      coverage[index] = Math.max(coverage[index] ?? 0, amount);
+      if (stroke.algorithm === "soften-v1") {
+        if (amount === 0) continue;
+        coverage[index] = (coverage[index] ?? 0) + amount;
+      } else {
+        if (amount <= (coverage[index] ?? 0)) continue;
+        coverage[index] = amount;
+      }
+      bounds.left = Math.min(bounds.left, x);
+      bounds.right = Math.max(bounds.right, x);
+      bounds.top = Math.min(bounds.top, y);
+      bounds.bottom = Math.max(bounds.bottom, y);
+    }
+  }
+}
+
+function rasterPath(
+  pixels: Uint8Array,
+  bounds: Bounds,
+  stroke: Stroke,
+  masks: PaintMasks,
+  path: StrokePath,
+  start: number,
+): void {
+  const spacing = Math.max(0.75, stroke.brush.radius * masks.size * 0.35);
+  if (start === 0) drawTip(pixels, bounds, stroke, masks, path[0][0], path[0][1]);
+  for (let index = Math.max(1, start); index < path.length; index += 1) {
+    const previous = path[index - 1]!;
+    const point = path[index]!;
+    if (tools[stroke.brush.tool].placement === "stamp") {
+      drawTip(pixels, bounds, stroke, masks, point[0], point[1]);
+    } else {
+      const distance = Math.hypot(point[0] - previous[0], point[1] - previous[1]) * masks.size;
+      const steps = Math.max(1, Math.ceil(distance / spacing));
+      for (let step = 1; step <= steps; step += 1) {
+        const t = step / steps;
+        drawTip(pixels, bounds, stroke, masks,
+          previous[0] + (point[0] - previous[0]) * t,
+          previous[1] + (point[1] - previous[1]) * t);
+      }
     }
   }
 }
 
 function strokeCoverage(stroke: Stroke, masks: PaintMasks): Readonly<{ pixels: Uint8Array; bounds: Bounds }> {
   const pixels = new Uint8Array(masks.size * masks.size);
-  const bounds = { left: masks.size, top: masks.size, right: -1, bottom: -1 };
-  const spacing = Math.max(0.75, stroke.brush.radius * masks.size * 0.35);
-  for (const path of stroke.paths) {
-    const first = path[0];
-    drawTip(pixels, bounds, stroke, masks, first[0], first[1]);
-    let previous = first;
-    for (const point of path.slice(1)) {
-      if (tools[stroke.brush.tool].placement === "stamp") {
-        drawTip(pixels, bounds, stroke, masks, point[0], point[1]);
-      } else {
-        const distance = Math.hypot(point[0] - previous[0], point[1] - previous[1]) * masks.size;
-        const steps = Math.max(1, Math.ceil(distance / spacing));
-        for (let step = 1; step <= steps; step += 1) {
-          const t = step / steps;
-          drawTip(pixels, bounds, stroke, masks,
-            previous[0] + (point[0] - previous[0]) * t,
-            previous[1] + (point[1] - previous[1]) * t);
-        }
-      }
-      previous = point;
-    }
-  }
+  const bounds = emptyBounds(masks.size);
+  for (const path of stroke.paths) rasterPath(pixels, bounds, stroke, masks, path, 0);
   return { pixels, bounds };
 }
 
@@ -224,65 +278,295 @@ function blendPixel(field: PaintField, source: PaintField, index: number, streng
     finish * strength + (source.finish[index] ?? 0) * remaining);
 }
 
-function applyStroke(field: PaintField, stroke: Stroke, masks: PaintMasks): void {
-  const { pixels, bounds } = strokeCoverage(stroke, masks);
+function pixelDiffers(field: PaintField, source: PaintField, index: number): boolean {
+  const offset = index * 4;
+  return field.rgba[offset] !== source.rgba[offset]
+    || field.rgba[offset + 1] !== source.rgba[offset + 1]
+    || field.rgba[offset + 2] !== source.rgba[offset + 2]
+    || field.rgba[offset + 3] !== source.rgba[offset + 3]
+    || field.finish[index] !== source.finish[index];
+}
+
+function composite(
+  field: PaintField,
+  source: PaintField,
+  stroke: Stroke,
+  pixels: Uint8Array,
+  bounds: Bounds,
+  effect?: PaintEffect,
+): void {
   const operation = tools[stroke.brush.tool].operation;
   const [red, green, blue] = colorBytes(stroke.brush.color);
-  const source = operation === "blend"
-    ? { size: field.size, rgba: field.rgba.slice(), finish: field.finish.slice() }
-    : field;
   const blurRadius = Math.max(1, Math.min(8, Math.round(stroke.brush.radius * field.size * 0.18)));
   for (let y = bounds.top; y <= bounds.bottom; y += 1) {
     for (let x = bounds.left; x <= bounds.right; x += 1) {
       const index = y * field.size + x;
       const strength = (pixels[index] ?? 0) / 255 * stroke.brush.opacity;
       if (strength === 0) continue;
+      const offset = index * 4;
+      const beforeRed = field.rgba[offset];
+      const beforeGreen = field.rgba[offset + 1];
+      const beforeBlue = field.rgba[offset + 2];
+      const beforeAlpha = field.rgba[offset + 3];
+      const beforeFinish = field.finish[index];
+      const differentBefore = effect !== undefined && pixelDiffers(field, source, index);
       if (operation === "blend") {
         blendPixel(field, source, index, strength, blurRadius);
-        continue;
-      }
-      const offset = index * 4;
-      const oldAlpha = (field.rgba[offset + 3] ?? 0) / 255;
-      if (operation === "erase") {
-        const remaining = oldAlpha * (1 - strength);
-        writePixel(field, index, remaining,
-          (field.rgba[offset] ?? 0) * remaining,
-          (field.rgba[offset + 1] ?? 0) * remaining,
-          (field.rgba[offset + 2] ?? 0) * remaining,
-          (field.finish[index] ?? 0) * remaining);
       } else {
+        const oldAlpha = (source.rgba[offset + 3] ?? 0) / 255;
         const remaining = oldAlpha * (1 - strength);
-        writePixel(field, index, strength + remaining,
-          red * strength + (field.rgba[offset] ?? 0) * remaining,
-          green * strength + (field.rgba[offset + 1] ?? 0) * remaining,
-          blue * strength + (field.rgba[offset + 2] ?? 0) * remaining,
-          stroke.brush.finish * 255 * strength + (field.finish[index] ?? 0) * remaining);
+        if (operation === "erase") {
+          writePixel(field, index, remaining,
+            (source.rgba[offset] ?? 0) * remaining,
+            (source.rgba[offset + 1] ?? 0) * remaining,
+            (source.rgba[offset + 2] ?? 0) * remaining,
+            (source.finish[index] ?? 0) * remaining);
+        } else {
+          writePixel(field, index, strength + remaining,
+            red * strength + (source.rgba[offset] ?? 0) * remaining,
+            green * strength + (source.rgba[offset + 1] ?? 0) * remaining,
+            blue * strength + (source.rgba[offset + 2] ?? 0) * remaining,
+            stroke.brush.finish * 255 * strength + (source.finish[index] ?? 0) * remaining);
+        }
+      }
+      if (effect !== undefined && (beforeRed !== field.rgba[offset]
+        || beforeGreen !== field.rgba[offset + 1] || beforeBlue !== field.rgba[offset + 2]
+        || beforeAlpha !== field.rgba[offset + 3] || beforeFinish !== field.finish[index])) {
+        effect.changed = true;
+        effect.differentPixels += Number(pixelDiffers(field, source, index)) - Number(differentBefore);
       }
     }
   }
 }
 
+function createSoftenScratch(stroke: Stroke, size: number): SoftenScratch {
+  const radius = stroke.brush.radius * size;
+  const support = Math.max(1, Math.round(radius * 0.22));
+  const width = Math.ceil(radius * 2) + 2;
+  return {
+    kind: "soften", pixels: new Uint32Array(size * size), remaining: [], support,
+    spacing: Math.max(0.75, radius * 0.35),
+    horizontal: new Float64Array(width * (width + support * 2) * 6),
+    sums: new Float64Array(width * 6), row: new Float64Array(6),
+  };
+}
+
+function createRasterScratch(stroke: Stroke, size: number): RasterScratch {
+  return stroke.algorithm === "soften-v1" ? createSoftenScratch(stroke, size)
+    : { kind: "coverage", pixels: new Uint8Array(size * size) };
+}
+
+function addFilterSample(
+  sum: Float64Array, source: PaintField, masks: PaintMasks, x: number, y: number, sign: number,
+): void {
+  const { size } = source;
+  if (x < border || x >= size - border || y < border || y >= size - border) return;
+  const index = y * size + x;
+  if (masks.valid[index] === 0) return;
+  const offset = index * 4;
+  const alpha = source.rgba[offset + 3]! * sign;
+  sum[0] = sum[0]! + sign;
+  sum[1] = sum[1]! + alpha;
+  sum[2] = sum[2]! + source.rgba[offset]! * alpha;
+  sum[3] = sum[3]! + source.rgba[offset + 1]! * alpha;
+  sum[4] = sum[4]! + source.rgba[offset + 2]! * alpha;
+  sum[5] = sum[5]! + source.finish[index]! * alpha;
+}
+
+function compositeSoften(
+  field: PaintField, source: PaintField, stroke: Stroke, masks: PaintMasks,
+  bounds: Bounds, scratch: SoftenScratch, effect?: PaintEffect,
+): void {
+  if (bounds.right < bounds.left || stroke.brush.opacity === 0) return;
+  const { support, horizontal, sums, row } = scratch;
+  const width = bounds.right - bounds.left + 1;
+  const stride = width * 6;
+  const height = bounds.bottom - bounds.top + 1;
+  const sampleTop = bounds.top - support;
+  for (let y = sampleTop; y <= bounds.bottom + support; y += 1) {
+    row.fill(0);
+    for (let x = bounds.left - support; x <= bounds.left + support; x += 1) {
+      addFilterSample(row, source, masks, x, y, 1);
+    }
+    for (let x = bounds.left; x <= bounds.right; x += 1) {
+      horizontal.set(row, (y - sampleTop) * stride + (x - bounds.left) * 6);
+      addFilterSample(row, source, masks, x - support, y, -1);
+      addFilterSample(row, source, masks, x + support + 1, y, 1);
+    }
+  }
+  sums.fill(0, 0, stride);
+  for (let y = 0; y <= support * 2; y += 1) {
+    for (let channel = 0; channel < stride; channel += 1) {
+      sums[channel] = sums[channel]! + horizontal[y * stride + channel]!;
+    }
+  }
+  const travelScale = scratch.spacing / (stroke.brush.radius * field.size);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (bounds.top + y) * field.size + bounds.left + x;
+      const dose = scratch.pixels[index]!;
+      const channel = x * 6;
+      const count = sums[channel]!;
+      if (dose === 0 || count === 0) continue;
+      const strength = -Math.expm1(-stroke.brush.opacity * (dose / 255) * travelScale);
+      const offset = index * 4;
+      const beforeRed = field.rgba[offset];
+      const beforeGreen = field.rgba[offset + 1];
+      const beforeBlue = field.rgba[offset + 2];
+      const beforeAlpha = field.rgba[offset + 3];
+      const beforeFinish = field.finish[index];
+      const differentBefore = effect !== undefined && pixelDiffers(field, source, index);
+      const remaining = source.rgba[offset + 3]! / 255 * (1 - strength);
+      const weight = strength / (count * 255);
+      writePixel(field, index,
+        sums[channel + 1]! * weight + remaining,
+        sums[channel + 2]! * weight + source.rgba[offset]! * remaining,
+        sums[channel + 3]! * weight + source.rgba[offset + 1]! * remaining,
+        sums[channel + 4]! * weight + source.rgba[offset + 2]! * remaining,
+        sums[channel + 5]! * weight + source.finish[index]! * remaining);
+      if (effect !== undefined && (beforeRed !== field.rgba[offset]
+        || beforeGreen !== field.rgba[offset + 1] || beforeBlue !== field.rgba[offset + 2]
+        || beforeAlpha !== field.rgba[offset + 3] || beforeFinish !== field.finish[index])) {
+        effect.changed = true;
+        effect.differentPixels += Number(pixelDiffers(field, source, index)) - Number(differentBefore);
+      }
+    }
+    if (y + 1 < height) {
+      for (let channel = 0; channel < stride; channel += 1) {
+        sums[channel] = sums[channel]! - horizontal[y * stride + channel]!
+          + horizontal[(y + support * 2 + 1) * stride + channel]!;
+      }
+    }
+  }
+}
+
+function rasterSoften(
+  field: PaintField, source: PaintField, stroke: Stroke, masks: PaintMasks,
+  path: StrokePath, start: number, pathIndex: number, scratch: SoftenScratch, effect?: PaintEffect,
+): void {
+  function dab(u: number, v: number): void {
+    const bounds = emptyBounds(masks.size);
+    drawTip(scratch.pixels, bounds, stroke, masks, u, v);
+    compositeSoften(field, source, stroke, masks, bounds, scratch, effect);
+  }
+  let remaining = scratch.remaining[pathIndex] ?? scratch.spacing;
+  if (start === 0) dab(path[0][0], path[0][1]);
+  for (let index = Math.max(1, start); index < path.length; index += 1) {
+    const previous = path[index - 1]!;
+    const point = path[index]!;
+    const distance = Math.hypot(point[0] - previous[0], point[1] - previous[1]) * masks.size;
+    if (distance === 0) continue;
+    let travelled = remaining;
+    while (travelled <= distance) {
+      const t = travelled / distance;
+      dab(previous[0] + (point[0] - previous[0]) * t, previous[1] + (point[1] - previous[1]) * t);
+      travelled += scratch.spacing;
+    }
+    remaining = travelled - distance;
+  }
+  scratch.remaining[pathIndex] = remaining;
+}
+
+function softenStroke(field: PaintField, source: PaintField, stroke: Stroke, masks: PaintMasks): void {
+  const scratch = createSoftenScratch(stroke, masks.size);
+  for (const [index, path] of stroke.paths.entries()) rasterSoften(field, source, stroke, masks, path, 0, index, scratch);
+}
+
+function extendsStroke(previous: Stroke, next: Stroke): boolean {
+  const a = previous.brush;
+  const b = next.brush;
+  return previous.id === next.id && previous.algorithm === next.algorithm && a.tool === b.tool && a.color === b.color
+    && a.radius === b.radius && a.opacity === b.opacity && a.softness === b.softness && a.finish === b.finish
+    && previous.paths.length <= next.paths.length
+    && previous.paths.every((path, index) => {
+      const nextPath = next.paths[index]!;
+      return path.length <= nextPath.length && path.every((point, pointIndex) => {
+        const nextPoint = nextPath[pointIndex]!;
+        return point[0] === nextPoint[0] && point[1] === nextPoint[1];
+      });
+    });
+}
+
+export function beginStroke(base: PaintField, masks: PaintMasks): StrokeTransaction {
+  let state: TransactionState = { kind: "unstarted" };
+
+  function update(stroke: Stroke): PaintField | null {
+    if (state.kind === "finished") throw new Error("This paint transaction is already finished.");
+    if (state.kind === "unstarted") {
+      state = { kind: "open", scratch: {
+        output: copyField(base), raster: createRasterScratch(stroke, masks.size),
+        previous: null, changed: false, differentPixels: 0,
+      } };
+    }
+    const scratch = state.scratch;
+    const replacement = scratch.previous !== null && !extendsStroke(scratch.previous, stroke);
+    if (replacement) {
+      scratch.output.rgba.set(base.rgba);
+      scratch.output.finish.set(base.finish);
+      scratch.raster = createRasterScratch(stroke, masks.size);
+      scratch.previous = null;
+      scratch.differentPixels = 0;
+    }
+    scratch.changed = replacement;
+    for (const [index, path] of stroke.paths.entries()) {
+      const start = scratch.previous?.paths[index]?.length ?? 0;
+      if (start === path.length) continue;
+      if (scratch.raster.kind === "soften") {
+        rasterSoften(scratch.output, base, stroke, masks, path, start, index, scratch.raster, scratch);
+      } else {
+        const bounds = emptyBounds(masks.size);
+        rasterPath(scratch.raster.pixels, bounds, stroke, masks, path, start);
+        composite(scratch.output, base, stroke, scratch.raster.pixels, bounds, scratch);
+      }
+    }
+    scratch.previous = stroke;
+    return scratch.changed ? scratch.output : null;
+  }
+
+  function finish(stroke: Stroke): FinishedPaint {
+    if (state.kind === "finished") {
+      if (state.result.stroke !== stroke) throw new Error("This paint transaction finished with another stroke.");
+      return state.result;
+    }
+    update(stroke);
+    if (state.kind !== "open") throw new Error("The paint transaction did not open.");
+    const result: FinishedPaint = state.scratch.differentPixels === 0
+      ? Object.freeze({ kind: "unchanged", stroke })
+      : Object.freeze({ kind: "changed", stroke, base, field: state.scratch.output });
+    state = { kind: "finished", result };
+    return result;
+  }
+
+  return Object.freeze({ update, finish });
+}
+
 export function composePaint(strokes: readonly Stroke[], masks: PaintMasks): PaintField {
   const field = blankField(masks.size);
-  for (const stroke of strokes) applyStroke(field, stroke, masks);
+  for (const stroke of strokes) {
+    if (stroke.algorithm === "soften-v1") {
+      softenStroke(field, copyField(field), stroke, masks);
+      continue;
+    }
+    const { pixels, bounds } = strokeCoverage(stroke, masks);
+    const source = tools[stroke.brush.tool].operation === "blend" ? copyField(field) : field;
+    composite(field, source, stroke, pixels, bounds);
+  }
   return field;
 }
 
 export function paintStroke(field: PaintField, stroke: Stroke, masks: PaintMasks): PaintField {
-  const next = Object.freeze({ size: field.size, rgba: field.rgba.slice(), finish: field.finish.slice() });
-  applyStroke(next, stroke, masks);
+  const next = copyField(field);
+  if (stroke.algorithm === "soften-v1") {
+    softenStroke(next, field, stroke, masks);
+    return next;
+  }
+  const { pixels, bounds } = strokeCoverage(stroke, masks);
+  composite(next, field, stroke, pixels, bounds);
   return next;
 }
 
 export function strokeChanges(field: PaintField, stroke: Stroke, masks: PaintMasks): boolean {
-  const candidate = paintStroke(field, stroke, masks);
-  for (let index = 0; index < field.rgba.length; index += 1) {
-    if (candidate.rgba[index] !== field.rgba[index]) return true;
-  }
-  for (let index = 0; index < field.finish.length; index += 1) {
-    if (candidate.finish[index] !== field.finish[index]) return true;
-  }
-  return false;
+  return beginStroke(field, masks).finish(stroke).kind === "changed";
 }
 
 export function analyzePaint(field: PaintField, masks: PaintMasks): PaintAnalysis {

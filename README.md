@@ -15,6 +15,8 @@ npm run dev
 
 Open `http://127.0.0.1:5173/make1up/`. Choose a tool and color, then drag on the face. Use **Eyes** or **Lips** for close work. **Liner** can paint anywhere on the paintable face. Blush, eyeshadow, and lipstick have safe area masks.
 
+Select **Blend existing makeup** to soften painted edges. **Strength** controls the effect. Repeated passes build softening within one gesture. Blend adds no color and does not drag pigment in the stroke direction.
+
 Select **Turn** to rotate without painting. **Undo** and **Redo** operate on complete gestures. **Guided apply** makes one real, undoable stroke from the portrait's landmarks.
 
 Select **Finish look** to lock the portrait and see its solo brief match. Use **Change brief** for another theme, an optional timer, or score-free practice.
@@ -73,7 +75,9 @@ This check verifies the distributed GLB, second paint UVs, rear-face protection,
 
 ## Repeat the performance comparison
 
-The [benchmark guide](benchmarks/README.md) uses a preserved source baseline and exact-output checks. Its scripts measure pure paint analysis and the first real production-browser Finish separately. They do not change the app or require a paid service.
+The [analysis benchmark guide](benchmarks/README.md) uses a preserved source baseline and exact-output checks. Its scripts measure pure paint analysis and the first real production-browser Finish separately.
+
+The [brush-response check](benchmarks/interaction.md) measures native pointer handlers, actual rendered-frame work, and brush release in a production browser. It verifies localized paint changes and records runtime errors. Neither check proves physical-phone frame rates.
 
 ## Inspect the evidence
 

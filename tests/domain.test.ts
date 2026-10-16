@@ -58,7 +58,7 @@ describe("look boundary", () => {
 
   it("rejects corrupt JSON, unknown versions, assets, catalogs, and duplicate IDs", () => {
     expect(decodeLookJSON("{")).toEqual({ ok: false, error: "The saved look is not valid JSON." });
-    expect(decodeLook({ ...newLook(), version: 2 })).toEqual({ ok: false, error: "This look has an unknown version or portrait asset." });
+    expect(decodeLook({ ...newLook(), version: 3 })).toEqual({ ok: false, error: "This look has an unknown version or portrait asset." });
     expect(decodeLook({ ...newLook(), asset: "invented-face" })).toEqual({ ok: false, error: "This look has an unknown version or portrait asset." });
     expect(identityFromInput({ ...newLook().identity, geometry: "sculpted-heart" })).toEqual({ ok: false, error: "Unknown portrait appearance option." });
     expect(decodeLook({ ...newLook(), strokes: [stroke("same"), stroke("same")] })).toEqual({ ok: false, error: "A saved look repeats a gesture ID." });

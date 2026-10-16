@@ -9,8 +9,9 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { captureStroke, catalog, defaultBrush, limits, newLook, regions, tools } from "./look";
 import type { Brush, Identity, Look, Stroke, UV } from "./look";
-import { analyzePaint, composePaint, createPaintMasks, paintStroke, strokeChanges } from "./paint";
-import type { PaintAnalysis, PaintField, PaintMasks } from "./paint";
+import { analyzePaint, beginStroke, composePaint, createPaintMasks, paintStroke } from "./paint";
+import type { ChangedPaint, PaintAnalysis, PaintField, PaintMasks, StrokeTransaction } from "./paint";
+import { indexPortrait } from "./picking";
 import type { Framing, PortraitPresentation } from "./session";
 
 export interface Portrait {
@@ -27,11 +28,14 @@ type PaintGesture = {
   pointerId: number;
   id: string;
   brush: Brush;
+  algorithm: Stroke["algorithm"];
   paths: UV[][];
   activePaths: [number | null, number | null];
   points: number;
   dirty: boolean;
+  paint: StrokeTransaction;
 };
+type PendingPaint = Readonly<{ before: Look; candidate: ChangedPaint }>;
 type Gesture = { kind: "idle" }
   | PaintGesture
   | { kind: "turn"; pointerId: number; x: number; y: number };
@@ -179,6 +183,7 @@ export async function mountPortrait(
   const listeners = new AbortController();
   const originalStyle = { cursor: canvas.style.cursor, touchAction: canvas.style.touchAction };
   let environment: WebGLRenderTarget | null = null;
+  let releasePicking: (() => void) | null = null;
   let observer: ResizeObserver | null = null;
   let animation = 0;
   let disposed = false;
@@ -198,6 +203,8 @@ export async function mountPortrait(
     }
     for (const bitmap of bitmaps) bitmap.close();
     for (const material of materials) material.dispose();
+    releasePicking?.();
+    releasePicking = null;
     for (const geometry of geometries) geometry.dispose();
     environment?.dispose();
     scene.clear();
@@ -220,6 +227,7 @@ export async function mountPortrait(
         }
       }
     });
+    releasePicking = indexPortrait([...meshes.values()]);
     function requireMesh(name: string): Mesh {
       const mesh = meshes.get(name);
       if (mesh === undefined) throw new Error(`The portrait is missing ${name}.`);
@@ -288,6 +296,7 @@ export async function mountPortrait(
     const mirrorCursor = new Vector4();
     installPaintMaterial(skin, pigment, finish, cursor, mirrorCursor);
     let gesture: Gesture = { kind: "idle" };
+    let pendingPaint: PendingPaint | null = null;
     let dirty = true;
     let contextLost = false;
     let hovered = false;
@@ -372,15 +381,22 @@ export async function mountPortrait(
 
     function applyStroke(stroke: Stroke): boolean {
       if (disposed || contextLost || presentation.readonly || presentation.navigation !== "paint") return false;
+      const paint = gesture.kind === "paint" ? gesture.paint : beginStroke(committed, masks);
       cancelGesture();
-      if (!strokeChanges(committed, stroke, masks)) {
+      const candidate = paint.finish(stroke);
+      if (candidate.kind === "unchanged") {
         const tool = tools[stroke.brush.tool];
         onError(`${tool.label} changed no makeup on the ${regions[tool.region].label.toLowerCase()}.`);
         return false;
       }
       const previousLook = presentation.look;
-      onStroke(stroke);
-      return presentation.look !== previousLook && presentation.look.strokes.at(-1) === stroke;
+      pendingPaint = { before: previousLook, candidate };
+      try {
+        onStroke(stroke);
+        return presentation.look !== previousLook && presentation.look.strokes.at(-1) === stroke;
+      } finally {
+        pendingPaint = null;
+      }
     }
 
     function resize(): void {
@@ -492,7 +508,8 @@ export async function mountPortrait(
       } else {
         gesture = {
           kind: "paint", pointerId: event.pointerId, id: crypto.randomUUID(), brush: presentation.brush,
-          paths: [], activePaths: [null, null], points: 0, dirty: false,
+          algorithm: presentation.brush.tool === "blend" ? "soften-v1" : undefined,
+          paths: [], activePaths: [null, null], points: 0, dirty: false, paint: beginStroke(committed, masks),
         };
         sample(event, gesture);
       }
@@ -528,12 +545,17 @@ export async function mountPortrait(
       if (gesture.kind === "idle" || event.pointerId !== gesture.pointerId) return;
       const completed = gesture;
       if (completed.kind === "paint") sample(event, completed);
-      cancelGesture();
       if (event.pointerType !== "mouse") hovered = false;
-      if (completed.kind !== "paint" || completed.points === 0) return;
-      const stroke = captureStroke(completed.id, completed.brush, completed.paths);
+      if (completed.kind !== "paint" || completed.points === 0) {
+        cancelGesture();
+        return;
+      }
+      const stroke = captureStroke(completed.id, completed.brush, completed.paths, completed.algorithm);
       if (stroke.ok) applyStroke(stroke.value);
-      else onError(stroke.error);
+      else {
+        cancelGesture();
+        onError(stroke.error);
+      }
     }
 
     function pointerCancel(event: PointerEvent): void {
@@ -550,7 +572,12 @@ export async function mountPortrait(
       if (next.look.strokes !== previous.look.strokes) {
         const prefix = previous.look.strokes.length <= next.look.strokes.length
           && previous.look.strokes.every((stroke, index) => stroke === next.look.strokes[index]);
-        committed = prefix
+        const candidate = pendingPaint?.candidate;
+        const adopt = candidate !== undefined && pendingPaint?.before === previous.look
+          && candidate.base === committed && prefix
+          && next.look.strokes.length === previous.look.strokes.length + 1
+          && next.look.strokes.at(-1) === candidate.stroke;
+        committed = adopt ? candidate.field : prefix
           ? next.look.strokes.slice(previous.look.strokes.length).reduce((field, stroke) => paintStroke(field, stroke, masks), committed)
           : composePaint(next.look.strokes, masks);
         lastAnalysis = null;
@@ -633,8 +660,11 @@ export async function mountPortrait(
         if (gesture.kind === "paint" && gesture.dirty) {
           gesture.dirty = false;
           if (gesture.points > 0) {
-            const draft = captureStroke(gesture.id, gesture.brush, gesture.paths);
-            if (draft.ok) showField(paintStroke(committed, draft.value, masks));
+            const draft = captureStroke(gesture.id, gesture.brush, gesture.paths, gesture.algorithm);
+            if (draft.ok) {
+              const preview = gesture.paint.update(draft.value);
+              if (preview !== null) showField(preview);
+            }
           }
         }
         if (gesture.kind === "idle" && !hovered && !reducedMotion.matches) {

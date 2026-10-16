@@ -1,0 +1,1021 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-16",
+  "baselineRevision": "e8b4423ac9b49b40c2098e665f43a3647baf02e6",
+  "browser": {
+    "protocolVersion": "1.3",
+    "product": "HeadlessChrome/156.0.8078.4",
+    "revision": "@f842f52ef39fd97b449eb27cff414bf05a98ddce",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+    "jsVersion": "15.6.75"
+  },
+  "baselineBuild": [
+    {
+      "file": "index-DP-ZYGri.js",
+      "sha256": "9fcb4c7cc3a31a1d26571a812b0e9e8b5ccf1bdf06a1524313a8c6c339138728",
+      "bytes": 70180
+    },
+    {
+      "file": "portrait-BPaK09W4.js",
+      "sha256": "b0a0c50d196a8a3baf98d15160abdf79970864740b0b2f3dc9cd9b8c3f7fddf4",
+      "bytes": 581484
+    }
+  ],
+  "candidateBuild": [
+    {
+      "file": "index-BpR4IFJm.js",
+      "sha256": "11bfcacc9ed4a147541555129fefede1880fbcae501346111641898be4f0fc32",
+      "bytes": 75305
+    },
+    {
+      "file": "portrait-B-hifGVB.js",
+      "sha256": "1e0473f8835588cf2fe034f3ff3b8540e2bd687cd408f98f14f3f4719cb3a29f",
+      "bytes": 650569
+    }
+  ],
+  "candidateModules": [
+    {
+      "sourcePath": "src/portrait.ts",
+      "sha256": "a3d172767ee34a09e11e66d51216ba4c29e825dd4f2875d8c2f248e99e9cf643"
+    },
+    {
+      "sourcePath": "src/paint.ts",
+      "sha256": "7fc6478ebbe63516fbed482421277ad769ab87ef7d82a45bcf9f646a1ed87a6f"
+    }
+  ],
+  "method": "Five alternating A then B production-browser pairs. Each tool uses a fresh context, a real mirrored cheek gesture, 72 trusted moves and 74 submitted portrait frames. Statistics are medians and ranges of trial summaries, not pooled frame percentiles. Independent CPU profiles are excluded.",
+  "verdict": "Faster main-thread paint and input work. Hardware FPS is not measured.",
+  "checks": {
+    "trials": 30,
+    "verified": 30,
+    "failed": 0,
+    "trustedMoves": 2160,
+    "imageChecks": [
+      {
+        "pair": 1,
+        "tool": "blush",
+        "sha256": "a5eaa912cad02eb1e4164b734b56aad6b07748dfa5721bcf939816bdf31c9bf1",
+        "identical": true
+      },
+      {
+        "pair": 1,
+        "tool": "liner",
+        "sha256": "3621d04cc6d69e2fbec581a29e7be4eac66d53195a8d9c8de9f5ffc51adcb5ce",
+        "identical": true
+      },
+      {
+        "pair": 2,
+        "tool": "blush",
+        "sha256": "a5eaa912cad02eb1e4164b734b56aad6b07748dfa5721bcf939816bdf31c9bf1",
+        "identical": true
+      },
+      {
+        "pair": 2,
+        "tool": "liner",
+        "sha256": "3621d04cc6d69e2fbec581a29e7be4eac66d53195a8d9c8de9f5ffc51adcb5ce",
+        "identical": true
+      },
+      {
+        "pair": 3,
+        "tool": "blush",
+        "sha256": "a5eaa912cad02eb1e4164b734b56aad6b07748dfa5721bcf939816bdf31c9bf1",
+        "identical": true
+      },
+      {
+        "pair": 3,
+        "tool": "liner",
+        "sha256": "3621d04cc6d69e2fbec581a29e7be4eac66d53195a8d9c8de9f5ffc51adcb5ce",
+        "identical": true
+      },
+      {
+        "pair": 4,
+        "tool": "blush",
+        "sha256": "a5eaa912cad02eb1e4164b734b56aad6b07748dfa5721bcf939816bdf31c9bf1",
+        "identical": true
+      },
+      {
+        "pair": 4,
+        "tool": "liner",
+        "sha256": "3621d04cc6d69e2fbec581a29e7be4eac66d53195a8d9c8de9f5ffc51adcb5ce",
+        "identical": true
+      },
+      {
+        "pair": 5,
+        "tool": "blush",
+        "sha256": "a5eaa912cad02eb1e4164b734b56aad6b07748dfa5721bcf939816bdf31c9bf1",
+        "identical": true
+      },
+      {
+        "pair": 5,
+        "tool": "liner",
+        "sha256": "3621d04cc6d69e2fbec581a29e7be4eac66d53195a8d9c8de9f5ffc51adcb5ce",
+        "identical": true
+      }
+    ]
+  },
+  "table": [
+    {
+      "tool": "blush",
+      "baseline": {
+        "frameWorkMedianMs": {
+          "count": 5,
+          "median": 68.59999990463257,
+          "min": 62.55000019073486,
+          "max": 72.65000009536743,
+          "values": [
+            69.94999980926514,
+            68.59999990463257,
+            72.65000009536743,
+            62.55000019073486,
+            66.34999990463257
+          ]
+        },
+        "frameWorkP95Ms": {
+          "count": 5,
+          "median": 110.77500038146972,
+          "min": 106.07999992370605,
+          "max": 133.62999973297119,
+          "values": [
+            115.50999999046326,
+            110.77500038146972,
+            133.62999973297119,
+            107.1400002002716,
+            106.07999992370605
+          ]
+        },
+        "pointerMoveMedianMs": {
+          "count": 5,
+          "median": 20.5,
+          "min": 20.09999942779541,
+          "max": 22.65000009536743,
+          "values": [
+            21.800000190734863,
+            20.200000286102295,
+            22.65000009536743,
+            20.09999942779541,
+            20.5
+          ]
+        },
+        "releaseHandlerMs": {
+          "count": 5,
+          "median": 283.6000003814697,
+          "min": 265.19999980926514,
+          "max": 319.69999980926514,
+          "values": [
+            283.6000003814697,
+            306.29999923706055,
+            319.69999980926514,
+            267.9000005722046,
+            265.19999980926514
+          ]
+        },
+        "firstDraftSubmitMs": {
+          "count": 5,
+          "median": 23.699999809265137,
+          "min": 23,
+          "max": 27.699999809265137,
+          "values": [
+            27.699999809265137,
+            23.5,
+            24.300000190734863,
+            23.699999809265137,
+            23
+          ]
+        },
+        "releaseToCommitSubmitMs": {
+          "count": 5,
+          "median": 288.5,
+          "min": 269.29999923706055,
+          "max": 324.69999980926514,
+          "values": [
+            288.5,
+            310,
+            324.69999980926514,
+            272.1000003814697,
+            269.29999923706055
+          ]
+        },
+        "gestureRegionMs": {
+          "count": 5,
+          "median": 11637.89999961853,
+          "min": 10943.800000190735,
+          "max": 12985.5,
+          "values": [
+            12577.099999427795,
+            11405.10000038147,
+            12985.5,
+            10943.800000190735,
+            11637.89999961853
+          ]
+        },
+        "uploadBytes": {
+          "count": 5,
+          "median": 387973120,
+          "min": 387973120,
+          "max": 387973120,
+          "values": [
+            387973120,
+            387973120,
+            387973120,
+            387973120,
+            387973120
+          ]
+        },
+        "lateFrameMedianMs": {
+          "count": 5,
+          "median": 99.69999980926514,
+          "min": 97.39999961853027,
+          "max": 109.29999923706055,
+          "values": [
+            103,
+            99.10000038146973,
+            109.29999923706055,
+            97.39999961853027,
+            99.69999980926514
+          ]
+        }
+      },
+      "candidate": {
+        "frameWorkMedianMs": {
+          "count": 5,
+          "median": 2.749999523162842,
+          "min": 2.4000000953674316,
+          "max": 2.8000001907348633,
+          "values": [
+            2.749999523162842,
+            2.8000001907348633,
+            2.75,
+            2.4000000953674316,
+            2.6000003814697266
+          ]
+        },
+        "frameWorkP95Ms": {
+          "count": 5,
+          "median": 6.235000228881836,
+          "min": 4.90000057220459,
+          "max": 6.9050002574920635,
+          "values": [
+            6.415000247955317,
+            6.9050002574920635,
+            6.235000228881836,
+            5.940000057220456,
+            4.90000057220459
+          ]
+        },
+        "pointerMoveMedianMs": {
+          "count": 5,
+          "median": 0.3000001907348633,
+          "min": 0.3000001907348633,
+          "max": 0.40000009536743164,
+          "values": [
+            0.3000001907348633,
+            0.40000009536743164,
+            0.3000001907348633,
+            0.3000001907348633,
+            0.39999961853027344
+          ]
+        },
+        "releaseHandlerMs": {
+          "count": 5,
+          "median": 2.200000762939453,
+          "min": 2.1999998092651367,
+          "max": 2.5,
+          "values": [
+            2.1999998092651367,
+            2.5,
+            2.1999998092651367,
+            2.200000762939453,
+            2.3000001907348633
+          ]
+        },
+        "firstDraftSubmitMs": {
+          "count": 5,
+          "median": 24.40000057220459,
+          "min": 23.40000057220459,
+          "max": 27.800000190734863,
+          "values": [
+            23.40000057220459,
+            27.800000190734863,
+            24.40000057220459,
+            23.5,
+            24.699999809265137
+          ]
+        },
+        "releaseToCommitSubmitMs": {
+          "count": 5,
+          "median": 180.89999961853027,
+          "min": 154.5,
+          "max": 235.10000038146973,
+          "values": [
+            235.10000038146973,
+            180.89999961853027,
+            171,
+            154.5,
+            181
+          ]
+        },
+        "gestureRegionMs": {
+          "count": 5,
+          "median": 8860.400000572205,
+          "min": 8483.699999809265,
+          "max": 9203.800000190735,
+          "values": [
+            8860.400000572205,
+            9203.800000190735,
+            8878.10000038147,
+            8831.5,
+            8483.699999809265
+          ]
+        },
+        "uploadBytes": {
+          "count": 5,
+          "median": 73400320,
+          "min": 73400320,
+          "max": 73400320,
+          "values": [
+            73400320,
+            73400320,
+            73400320,
+            73400320,
+            73400320
+          ]
+        },
+        "lateFrameMedianMs": {
+          "count": 5,
+          "median": 2.3000001907348633,
+          "min": 2.09999942779541,
+          "max": 2.799999237060547,
+          "values": [
+            2.40000057220459,
+            2.3000001907348633,
+            2.799999237060547,
+            2.1000003814697266,
+            2.09999942779541
+          ]
+        }
+      },
+      "delta": {
+        "frameWorkMedianMs": {
+          "before": 68.59999990463257,
+          "after": 2.749999523162842,
+          "reductionPercent": 95.99125433383982,
+          "ratio": 24.945458836201553
+        },
+        "frameWorkP95Ms": {
+          "before": 110.77500038146972,
+          "after": 6.235000228881836,
+          "reductionPercent": 94.37147352073056,
+          "ratio": 17.76663934482898
+        },
+        "pointerMoveMedianMs": {
+          "before": 20.5,
+          "after": 0.3000001907348633,
+          "reductionPercent": 98.53658443543969,
+          "ratio": 68.33328988819765
+        },
+        "releaseHandlerMs": {
+          "before": 283.6000003814697,
+          "after": 2.200000762939453,
+          "reductionPercent": 99.22425925247524,
+          "ratio": 128.9090463780329
+        },
+        "firstDraftSubmitMs": {
+          "before": 23.699999809265137,
+          "after": 24.40000057220459,
+          "reductionPercent": -2.9535897408142553,
+          "ratio": 0.9713114448146012
+        },
+        "releaseToCommitSubmitMs": {
+          "before": 288.5,
+          "after": 180.89999961853027,
+          "reductionPercent": 37.29636061749384,
+          "ratio": 1.5948037623458782
+        },
+        "gestureRegionMs": {
+          "before": 11637.89999961853,
+          "after": 8860.400000572205,
+          "reductionPercent": 23.8659895611525,
+          "ratio": 1.3134734322228065
+        },
+        "uploadBytes": {
+          "before": 387973120,
+          "after": 73400320,
+          "reductionPercent": 81.08108108108108,
+          "ratio": 5.285714285714286
+        },
+        "lateFrameMedianMs": {
+          "before": 99.69999980926514,
+          "after": 2.3000001907348633,
+          "reductionPercent": 97.693079041991,
+          "ratio": 43.34782240927137
+        }
+      },
+      "workload": "Same brush settings and byte-identical final image."
+    },
+    {
+      "tool": "liner",
+      "baseline": {
+        "frameWorkMedianMs": {
+          "count": 5,
+          "median": 16.09999990463257,
+          "min": 15.349999904632568,
+          "max": 17.700000286102295,
+          "values": [
+            16.59999990463257,
+            17.700000286102295,
+            16.09999990463257,
+            15.649999618530273,
+            15.349999904632568
+          ]
+        },
+        "frameWorkP95Ms": {
+          "count": 5,
+          "median": 30.419999933242792,
+          "min": 25.509999990463253,
+          "max": 37.190000391006436,
+          "values": [
+            30.419999933242792,
+            37.190000391006436,
+            30.93499975204468,
+            25.795000696182242,
+            25.509999990463253
+          ]
+        },
+        "pointerMoveMedianMs": {
+          "count": 5,
+          "median": 20.800000190734863,
+          "min": 20.5,
+          "max": 22.649999618530273,
+          "values": [
+            20.699999809265137,
+            22.649999618530273,
+            21.450000286102295,
+            20.800000190734863,
+            20.5
+          ]
+        },
+        "releaseHandlerMs": {
+          "count": 5,
+          "median": 84.29999923706055,
+          "min": 69.89999961853027,
+          "max": 99,
+          "values": [
+            69.89999961853027,
+            78.10000038146973,
+            84.29999923706055,
+            99,
+            94
+          ]
+        },
+        "firstDraftSubmitMs": {
+          "count": 5,
+          "median": 22.199999809265137,
+          "min": 20.699999809265137,
+          "max": 24.5,
+          "values": [
+            22.199999809265137,
+            24.5,
+            22.199999809265137,
+            24.5,
+            20.699999809265137
+          ]
+        },
+        "releaseToCommitSubmitMs": {
+          "count": 5,
+          "median": 137.80000019073486,
+          "min": 134.69999980926514,
+          "max": 144.4000005722046,
+          "values": [
+            137.80000019073486,
+            144.4000005722046,
+            135.39999961853027,
+            134.69999980926514,
+            140.0999994277954
+          ]
+        },
+        "gestureRegionMs": {
+          "count": 5,
+          "median": 11085.199999809265,
+          "min": 10644.199999809265,
+          "max": 12462.400000572205,
+          "values": [
+            11085.199999809265,
+            12462.400000572205,
+            11807.800000190735,
+            10826.5,
+            10644.199999809265
+          ]
+        },
+        "uploadBytes": {
+          "count": 5,
+          "median": 387973120,
+          "min": 387973120,
+          "max": 387973120,
+          "values": [
+            387973120,
+            387973120,
+            387973120,
+            387973120,
+            387973120
+          ]
+        },
+        "lateFrameMedianMs": {
+          "count": 5,
+          "median": 19.5,
+          "min": 19,
+          "max": 22,
+          "values": [
+            19,
+            21.5,
+            19.5,
+            19.300000190734863,
+            22
+          ]
+        }
+      },
+      "candidate": {
+        "frameWorkMedianMs": {
+          "count": 5,
+          "median": 1.3000001907348633,
+          "min": 1.0999999046325684,
+          "max": 1.3000001907348633,
+          "values": [
+            1.3000001907348633,
+            1.3000001907348633,
+            1.0999999046325684,
+            1.3000001907348633,
+            1.1000003814697266
+          ]
+        },
+        "frameWorkP95Ms": {
+          "count": 5,
+          "median": 4.434999752044678,
+          "min": 4.034999799728393,
+          "max": 4.7399996280670145,
+          "values": [
+            4.034999799728393,
+            4.7399996280670145,
+            4.234999942779541,
+            4.434999752044678,
+            4.650000190734858
+          ]
+        },
+        "pointerMoveMedianMs": {
+          "count": 5,
+          "median": 0.39999961853027344,
+          "min": 0.3000001907348633,
+          "max": 0.40000057220458984,
+          "values": [
+            0.39999961853027344,
+            0.40000057220458984,
+            0.3000001907348633,
+            0.39999961853027344,
+            0.39999961853027344
+          ]
+        },
+        "releaseHandlerMs": {
+          "count": 5,
+          "median": 2,
+          "min": 1.8000001907348633,
+          "max": 2.6000003814697266,
+          "values": [
+            2.6000003814697266,
+            2.5,
+            1.8000001907348633,
+            1.8000001907348633,
+            2
+          ]
+        },
+        "firstDraftSubmitMs": {
+          "count": 5,
+          "median": 21,
+          "min": 18.100000381469727,
+          "max": 21.40000057220459,
+          "values": [
+            21,
+            20.5,
+            21.40000057220459,
+            21.300000190734863,
+            18.100000381469727
+          ]
+        },
+        "releaseToCommitSubmitMs": {
+          "count": 5,
+          "median": 178.9000005722046,
+          "min": 154,
+          "max": 190.0999994277954,
+          "values": [
+            178.9000005722046,
+            177.69999980926514,
+            181.30000019073486,
+            154,
+            190.0999994277954
+          ]
+        },
+        "gestureRegionMs": {
+          "count": 5,
+          "median": 8411.300000190735,
+          "min": 8208.5,
+          "max": 9538.70000076294,
+          "values": [
+            9538.70000076294,
+            9328.199999809265,
+            8259.60000038147,
+            8411.300000190735,
+            8208.5
+          ]
+        },
+        "uploadBytes": {
+          "count": 5,
+          "median": 73400320,
+          "min": 73400320,
+          "max": 73400320,
+          "values": [
+            73400320,
+            73400320,
+            73400320,
+            73400320,
+            73400320
+          ]
+        },
+        "lateFrameMedianMs": {
+          "count": 5,
+          "median": 0.9000005722045898,
+          "min": 0.8000001907348633,
+          "max": 1.0999994277954102,
+          "values": [
+            1.0999994277954102,
+            1,
+            0.8000001907348633,
+            0.8999996185302734,
+            0.9000005722045898
+          ]
+        }
+      },
+      "delta": {
+        "frameWorkMedianMs": {
+          "before": 16.09999990463257,
+          "after": 1.3000001907348633,
+          "reductionPercent": 91.92546460599166,
+          "ratio": 12.38461349419616
+        },
+        "frameWorkP95Ms": {
+          "before": 30.419999933242792,
+          "after": 4.434999752044678,
+          "reductionPercent": 85.42077658850309,
+          "ratio": 6.859075903942992
+        },
+        "pointerMoveMedianMs": {
+          "before": 20.800000190734863,
+          "after": 0.39999961853027344,
+          "reductionPercent": 98.07692492854663,
+          "ratio": 52.00005006794936
+        },
+        "releaseHandlerMs": {
+          "before": 84.29999923706055,
+          "after": 2,
+          "reductionPercent": 97.62752073772172,
+          "ratio": 42.14999961853027
+        },
+        "firstDraftSubmitMs": {
+          "before": 22.199999809265137,
+          "after": 21,
+          "reductionPercent": 5.4054045926807515,
+          "ratio": 1.0571428480602445
+        },
+        "releaseToCommitSubmitMs": {
+          "before": 137.80000019073486,
+          "after": 178.9000005722046,
+          "reductionPercent": -29.825834778361006,
+          "ratio": 0.770262715203952
+        },
+        "gestureRegionMs": {
+          "before": 11085.199999809265,
+          "after": 8411.300000190735,
+          "reductionPercent": 24.12135098748366,
+          "ratio": 1.3178937856880502
+        },
+        "uploadBytes": {
+          "before": 387973120,
+          "after": 73400320,
+          "reductionPercent": 81.08108108108108,
+          "ratio": 5.285714285714286
+        },
+        "lateFrameMedianMs": {
+          "before": 19.5,
+          "after": 0.9000005722045898,
+          "reductionPercent": 95.38461245023288,
+          "ratio": 21.666652891379744
+        }
+      },
+      "workload": "Same brush settings and byte-identical final image."
+    },
+    {
+      "tool": "blend",
+      "baseline": {
+        "frameWorkMedianMs": {
+          "count": 5,
+          "median": 66.84999990463257,
+          "min": 64.0499997138977,
+          "max": 72.84999990463257,
+          "values": [
+            69.39999961853027,
+            72.84999990463257,
+            66.84999990463257,
+            65.05000019073486,
+            64.0499997138977
+          ]
+        },
+        "frameWorkP95Ms": {
+          "count": 5,
+          "median": 102.51500020027159,
+          "min": 97.85,
+          "max": 107.77000069618225,
+          "values": [
+            102.51500020027159,
+            107.36499967575072,
+            97.85,
+            107.77000069618225,
+            98.93499979972837
+          ]
+        },
+        "pointerMoveMedianMs": {
+          "count": 5,
+          "median": 20.649999618530273,
+          "min": 19.84999990463257,
+          "max": 22.5,
+          "values": [
+            22.199999809265137,
+            22.5,
+            20,
+            20.649999618530273,
+            19.84999990463257
+          ]
+        },
+        "releaseHandlerMs": {
+          "count": 5,
+          "median": 234.60000038146973,
+          "min": 230.19999980926514,
+          "max": 244.80000019073486,
+          "values": [
+            234.60000038146973,
+            244.80000019073486,
+            242,
+            230.80000019073486,
+            230.19999980926514
+          ]
+        },
+        "firstDraftSubmitMs": {
+          "count": 5,
+          "median": 32.90000057220459,
+          "min": 32.30000019073486,
+          "max": 34.69999980926514,
+          "values": [
+            32.90000057220459,
+            33.59999942779541,
+            34.69999980926514,
+            32.60000038146973,
+            32.30000019073486
+          ]
+        },
+        "releaseToCommitSubmitMs": {
+          "count": 5,
+          "median": 238.39999961853027,
+          "min": 233.19999980926514,
+          "max": 251.69999980926514,
+          "values": [
+            238.39999961853027,
+            251.69999980926514,
+            246.19999980926514,
+            234.80000019073486,
+            233.19999980926514
+          ]
+        },
+        "gestureRegionMs": {
+          "count": 5,
+          "median": 11266,
+          "min": 10837,
+          "max": 12767.199999809265,
+          "values": [
+            11266,
+            12767.199999809265,
+            11182.199999809265,
+            12000.60000038147,
+            10837
+          ]
+        },
+        "uploadBytes": {
+          "count": 5,
+          "median": 387973120,
+          "min": 387973120,
+          "max": 387973120,
+          "values": [
+            387973120,
+            387973120,
+            387973120,
+            387973120,
+            387973120
+          ]
+        },
+        "lateFrameMedianMs": {
+          "count": 5,
+          "median": 96,
+          "min": 91.59999942779541,
+          "max": 99.5,
+          "values": [
+            96,
+            99.5,
+            91.59999942779541,
+            97.59999942779541,
+            92.39999961853027
+          ]
+        }
+      },
+      "candidate": {
+        "frameWorkMedianMs": {
+          "count": 5,
+          "median": 6.749999523162842,
+          "min": 6.349999904632568,
+          "max": 7.099999904632568,
+          "values": [
+            6.749999523162842,
+            7.099999904632568,
+            6.800000190734863,
+            6.349999904632568,
+            6.699999809265137
+          ]
+        },
+        "frameWorkP95Ms": {
+          "count": 5,
+          "median": 10.945000362396236,
+          "min": 9.46999955177307,
+          "max": 13.909999608993527,
+          "values": [
+            10.969999885559082,
+            13.909999608993527,
+            10.945000362396236,
+            9.46999955177307,
+            10.040000438690184
+          ]
+        },
+        "pointerMoveMedianMs": {
+          "count": 5,
+          "median": 0.3000001907348633,
+          "min": 0.3000001907348633,
+          "max": 0.3000001907348633,
+          "values": [
+            0.3000001907348633,
+            0.3000001907348633,
+            0.3000001907348633,
+            0.3000001907348633,
+            0.3000001907348633
+          ]
+        },
+        "releaseHandlerMs": {
+          "count": 5,
+          "median": 1.5,
+          "min": 1.0999994277954102,
+          "max": 3,
+          "values": [
+            3,
+            2.8000001907348633,
+            1.3999996185302734,
+            1.5,
+            1.0999994277954102
+          ]
+        },
+        "firstDraftSubmitMs": {
+          "count": 5,
+          "median": 39.69999980926514,
+          "min": 35.40000057220459,
+          "max": 44.60000038146973,
+          "values": [
+            39.89999961853027,
+            44.60000038146973,
+            39.69999980926514,
+            37.30000019073486,
+            35.40000057220459
+          ]
+        },
+        "releaseToCommitSubmitMs": {
+          "count": 5,
+          "median": 335,
+          "min": 308.79999923706055,
+          "max": 367.69999980926514,
+          "values": [
+            308.79999923706055,
+            367.69999980926514,
+            361.8999996185303,
+            333.6000003814697,
+            335
+          ]
+        },
+        "gestureRegionMs": {
+          "count": 5,
+          "median": 10002.199999809265,
+          "min": 9731.5,
+          "max": 11555.10000038147,
+          "values": [
+            10000.599999427795,
+            11555.10000038147,
+            10002.199999809265,
+            9731.5,
+            10058.900000572205
+          ]
+        },
+        "uploadBytes": {
+          "count": 5,
+          "median": 309329920,
+          "min": 309329920,
+          "max": 309329920,
+          "values": [
+            309329920,
+            309329920,
+            309329920,
+            309329920,
+            309329920
+          ]
+        },
+        "lateFrameMedianMs": {
+          "count": 5,
+          "median": 6.200000762939453,
+          "min": 6,
+          "max": 6.899999618530273,
+          "values": [
+            6.09999942779541,
+            6.899999618530273,
+            6.5,
+            6,
+            6.200000762939453
+          ]
+        }
+      },
+      "delta": {
+        "frameWorkMedianMs": {
+          "before": 66.84999990463257,
+          "after": 6.749999523162842,
+          "reductionPercent": 89.90276808856797,
+          "ratio": 9.903704389198047
+        },
+        "frameWorkP95Ms": {
+          "before": 102.51500020027159,
+          "after": 10.945000362396236,
+          "reductionPercent": 89.32351329950323,
+          "ratio": 9.366377049422733
+        },
+        "pointerMoveMedianMs": {
+          "before": 20.649999618530273,
+          "after": 0.3000001907348633,
+          "reductionPercent": 98.54721454587506,
+          "ratio": 68.83328829874146
+        },
+        "releaseHandlerMs": {
+          "before": 234.60000038146973,
+          "after": 1.5,
+          "reductionPercent": 99.36061381178136,
+          "ratio": 156.40000025431314
+        },
+        "firstDraftSubmitMs": {
+          "before": 32.90000057220459,
+          "after": 39.69999980926514,
+          "reductionPercent": -20.668690330678885,
+          "ratio": 0.8287153836339926
+        },
+        "releaseToCommitSubmitMs": {
+          "before": 238.39999961853027,
+          "after": 335,
+          "reductionPercent": -40.520134453037656,
+          "ratio": 0.7116417899060605
+        },
+        "gestureRegionMs": {
+          "before": 11266,
+          "after": 10002.199999809265,
+          "reductionPercent": 11.217823541547444,
+          "ratio": 1.1263522025369253
+        },
+        "uploadBytes": {
+          "before": 387973120,
+          "after": 309329920,
+          "reductionPercent": 20.270270270270274,
+          "ratio": 1.2542372881355932
+        },
+        "lateFrameMedianMs": {
+          "before": 96,
+          "after": 6.200000762939453,
+          "reductionPercent": 93.54166587193808,
+          "ratio": 15.483869062378291
+        }
+      },
+      "workload": "Intentionally changed Blend effect. Not a same-output kernel comparison."
+    }
+  ],
+  "limitations": [
+    "Software-rendered Chromium on a shared 16-core workstation. Existing unrelated browsers remain open.",
+    "Comparisons alternate to reduce drift. Host load rises during software GPU activity. Performance trials do not overlap the functional browser suite.",
+    "The intended 16 ms input cadence is consumer-limited. Delivered events are slower. Gesture wall time is a controlled automation scenario, not human latency.",
+    "The new Blend has a different visible result. Blush and Liner provide the behavior-preserving controls.",
+    "Liner release-to-commit submission median increased from 137.8 to 178.9 ms, with ranges 134.7 to 144.4 and 154.0 to 190.1. Blend increased from 238.4 to 335.0 ms, with ranges 233.2 to 251.7 and 308.8 to 367.7. These software-renderer observations are regressions, not noise. The experiment does not explain physical display latency.",
+    "Blend first-draft submission median increased from 32.9 to 39.7 ms. Its new filtering workload intentionally differs from legacy Blend.",
+    "Physical-phone and hardware-GPU checks remain manual."
+  ]
+}

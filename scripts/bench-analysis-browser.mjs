@@ -15,11 +15,13 @@ import ts from 'typescript';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const script = fileURLToPath(import.meta.url);
-const { values: options } = parseArgs({ options: {
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === script;
+const { values: options } = parseArgs({ args: isMain ? process.argv.slice(2) : [], options: {
   baseline: { type: 'string', default: 'benchmarks/analysis-baseline/paint.ts' },
   out: { type: 'string', default: 'tmp/verification/performance-final/measured' },
   probe: { type: 'boolean', default: false },
   'skip-readiness': { type: 'boolean', default: false },
+  'self-check': { type: 'boolean', default: false },
   serve: { type: 'string' },
   port: { type: 'string' },
   help: { type: 'boolean' },
@@ -208,9 +210,17 @@ async function paintPolicy(source) {
     assert(ts.isPropertyAssignment(property) && ts.isIdentifier(property.name), 'Expected explicit registry properties.');
     return property;
   });
-  const declaration = file.statements.filter(ts.isVariableStatement)
-    .flatMap((statement) => [...statement.declarationList.declarations])
-    .find((item) => ts.isIdentifier(item.name) && item.name.text === 'tools');
+  const registryNames = ['palette', 'regions', 'tools', 'themes'];
+  const statements = file.statements.filter(ts.isVariableStatement).flatMap((statement) => {
+    const declarations = [...statement.declarationList.declarations]
+      .filter((item) => ts.isIdentifier(item.name) && registryNames.includes(item.name.text));
+    return declarations.length ? [ts.factory.updateVariableStatement(statement, statement.modifiers,
+      ts.factory.updateVariableDeclarationList(statement.declarationList, declarations))] : [];
+  });
+  const declarations = statements.flatMap((statement) => [...statement.declarationList.declarations]);
+  assert.deepEqual(declarations.map((item) => item.name.text).toSorted(), registryNames.toSorted(),
+    'Each paint policy registry must be declared exactly once.');
+  const declaration = declarations.find((item) => item.name.text === 'tools');
   assert(declaration?.initializer, 'The exported tool registry is required.');
   const ignoredValues = new Set();
   for (const tool of properties(declaration.initializer)) {
@@ -228,7 +238,7 @@ async function paintPolicy(source) {
       ignoredValues.add(value);
     }
   }
-  const transformed = ts.transform(file, [(context) => {
+  const transformed = ts.transform(ts.factory.updateSourceFile(file, statements), [(context) => {
     const visit = (node) => ignoredValues.has(node) ? ts.factory.createNull() : ts.visitEachChild(node, visit, context);
     return (node) => ts.visitNode(node, visit);
   }]);
@@ -238,7 +248,10 @@ async function paintPolicy(source) {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } });
   assert.equal(compiled.diagnostics?.length, 0, 'The look policy must transpile.');
   const exported = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputText).toString('base64')}`);
-  const data = Object.fromEntries(Object.entries(exported).filter(([, value]) => typeof value !== 'function'));
+  const data = Object.fromEntries(registryNames.map((name) => {
+    assert(Object.hasOwn(exported, name), `The ${name} policy registry must be exported.`);
+    return [name, exported[name]];
+  }));
   data.tools = Object.fromEntries(Object.entries(data.tools).map(([name, { defaults: _defaults, ...policy }]) => [name, policy]));
   return { data, structure };
 }
@@ -248,30 +261,79 @@ export async function assertPaintPolicy(original, current) {
     'The original and current paint policy must match except tool interaction defaults.');
 }
 
-async function isolate(baselinePath) {
+function analyzePaintSegments(source) {
+  const file = ts.createSourceFile('paint.ts', source, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS);
+  assert.equal(file.parseDiagnostics.length, 0, 'The paint source must parse as TypeScript.');
+  const functions = file.statements.filter((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'analyzePaint');
+  assert.equal(functions.length, 1, 'Exactly one analyzePaint function is required.');
+  const analyzer = functions[0];
+  assert(analyzer.body && analyzer.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword),
+    'The complete exported analyzePaint function is required.');
+  const start = analyzer.getStart(file);
+  const end = analyzer.getEnd();
+  return { before: source.slice(0, start), analyzePaint: source.slice(start, end), after: source.slice(end) };
+}
+
+export function graftAnalyzePaint(original, current) {
+  const frozen = analyzePaintSegments(original);
+  const optimized = analyzePaintSegments(current);
+  assert.notEqual(frozen.analyzePaint, optimized.analyzePaint, 'The saved baseline must not be the optimized analyzer.');
+  const baseline = optimized.before + frozen.analyzePaint + optimized.after;
+  const grafted = analyzePaintSegments(baseline);
+  assert.equal(grafted.before, optimized.before, 'Isolated code before analyzePaint differs.');
+  assert.equal(grafted.after, optimized.after, 'Isolated code after analyzePaint differs.');
+  assert.equal(grafted.analyzePaint, frozen.analyzePaint, 'The isolated baseline must use the frozen analyzer unchanged.');
+  return baseline;
+}
+
+async function comparisonSources(baselinePath) {
   const savedLook = path.join(path.dirname(baselinePath), 'look.ts');
   if (!await exists(baselinePath) || !await exists(savedLook)) {
-    throw new Error(`Missing saved baseline at ${baselinePath}, or its sibling look.ts. Supply --baseline PATH/paint.ts with the preserved original modules. Current code is never substituted.`);
+    throw new Error(`Missing saved baseline at ${baselinePath}, or its sibling look.ts. Supply --baseline PATH/paint.ts with the preserved original modules. The current analyzer is never used as a fallback.`);
   }
   const original = await fs.readFile(baselinePath, 'utf8');
   const current = await fs.readFile(path.join(root, 'src/paint.ts'), 'utf8');
   const look = await fs.readFile(savedLook, 'utf8');
   const currentLook = await fs.readFile(path.join(root, 'src/look.ts'), 'utf8');
-  await assertPaintPolicy(look, currentLook);
-  const segments = (source) => {
-    const start = source.indexOf('export function analyzePaint(');
-    const end = source.indexOf('\nfunction percentage(', start);
-    assert(start > 0 && end > start, 'Cannot find the complete analyzePaint boundary.');
-    return [source.slice(0, start), source.slice(start, end), source.slice(end)];
-  };
-  const before = segments(original);
-  const after = segments(current);
-  assert.equal(before[0], after[0], 'Code before analyzePaint differs.');
-  assert.equal(before[2], after[2], 'Code after analyzePaint differs.');
-  assert.notEqual(before[1], after[1], 'The saved baseline must not be the optimized source.');
   const savedManifest = path.join(path.dirname(baselinePath), 'manifest.json');
   const baselineHashes = { 'paint.ts': sha256(original), 'look.ts': sha256(look) };
   if (await exists(savedManifest)) assert.deepEqual(baselineHashes, JSON.parse(await fs.readFile(savedManifest, 'utf8')).sources);
+  await assertPaintPolicy(look, currentLook);
+  const baselinePaint = graftAnalyzePaint(original, current);
+  return { original, current, look, currentLook, baselineHashes, baselinePaint };
+}
+
+async function selfCheck() {
+  const { original, current, look, currentLook, baselinePaint } = await comparisonSources(path.resolve(root, options.baseline));
+  assert.equal(graftAnalyzePaint(
+    'export function analyzePaint() { return 1; }\nfunction oldPainter() {}\n',
+    'export function beginStroke() {}\nexport function analyzePaint() { return 2; }\nfunction currentPainter() {}\n'),
+  'export function beginStroke() {}\nexport function analyzePaint() { return 1; }\nfunction currentPainter() {}\n');
+  assert.equal(analyzePaintSegments(baselinePaint).analyzePaint, analyzePaintSegments(original).analyzePaint);
+  assert.equal(baselinePaint.includes('export function beginStroke('), true, 'The graft must retain the current paint API.');
+  assert.throws(() => graftAnalyzePaint(current, current), /The saved baseline must not be the optimized analyzer/);
+  assert.throws(() => graftAnalyzePaint('export function missing() {}', current), /Exactly one analyzePaint function is required/);
+  await assertPaintPolicy(look, currentLook.replace('radius: 0.045', 'radius: 0.05')
+    + '\nexport const unrelatedDocumentSettings = { version: 2 };\n');
+  const policyChanges = [
+    ['color: "#cc5075"', 'color: "#000000"'],
+    ['cheeks: { label: "Cheeks" }', 'cheeks: { label: "Changed cheeks" }'],
+    ['minimumCoverage: 0.005', 'minimumCoverage: 0.01'],
+    ['operation: "pigment", region: "cheeks"', 'operation: "erase", region: "cheeks"'],
+    ['region: "cheeks", tip: "round"', 'region: "valid", tip: "round"'],
+    ['tip: "round", placement: "continuous"', 'tip: "star", placement: "continuous"'],
+    ['tip: "round", placement: "continuous"', 'tip: "round", placement: "stamp"'],
+  ];
+  for (const [before, after] of policyChanges) {
+    assert(currentLook.includes(before), `Missing self-check input ${before}.`);
+    await assert.rejects(assertPaintPolicy(look, currentLook.replace(before, after)),
+      /The original and current paint policy must match/);
+  }
+  console.log('Analysis source self-check passed. Frozen hashes, analyzer graft, current API, allowed defaults, and palette/region/theme/tool policy rejection verified. No builds or browsers.');
+}
+
+async function isolate(baselinePath) {
+  const { current, currentLook, baselineHashes, baselinePaint } = await comparisonSources(baselinePath);
   assert(!await exists(output), `Refusing to overwrite ${output}. Choose a new --out directory.`);
   const allowed = path.join(root, 'tmp/verification/performance-final') + path.sep;
   assert(output.startsWith(allowed), `--out must be a new child of ${allowed}`);
@@ -290,7 +352,7 @@ async function isolate(baselinePath) {
     await fs.copyFile(path.join(root, 'index.html'), path.join(side.source, 'index.html'));
     await fs.copyFile(path.join(root, 'package.json'), path.join(side.source, 'package.json'));
     await fs.symlink(path.join(root, 'node_modules'), path.join(side.source, 'node_modules'), 'dir');
-    if (side.name === 'baseline') await fs.writeFile(path.join(side.source, 'src/paint.ts'), original);
+    if (side.name === 'baseline') await fs.writeFile(path.join(side.source, 'src/paint.ts'), baselinePaint);
     await build({ configFile: false, root: side.source, mode: 'production',
       build: { outDir: side.dist, emptyOutDir: true, sourcemap: 'hidden' },
       customLogger: { info: (message) => { log.push(message); }, warn: (message) => { log.push(message); },
@@ -303,13 +365,17 @@ async function isolate(baselinePath) {
     assert(side.entry, 'A release entry is required.');
     side.assetHashes = await hashes(side.dist);
   }
-  for (const [filename, hash] of Object.entries(sides[0].sources)) {
-    if (filename !== 'paint.ts') assert.deepEqual(hash, sides[1].sources[filename]);
-  }
+  const otherSources = (side) => Object.fromEntries(Object.entries(side.sources).filter(([name]) => name !== 'paint.ts'));
+  assert.deepEqual(otherSources(sides[0]), otherSources(sides[1]), 'All isolated sources outside paint.ts must be identical.');
+  assert.equal(sides[1].sources['look.ts'].sha256, sha256(currentLook), 'The isolated look source must match the verified paint policy.');
+  for (const side of sides) assert.equal(await fs.readFile(path.join(side.source, 'src/paint.ts'), 'utf8'),
+    side.name === 'baseline' ? baselinePaint : current, 'The isolated paint source must match the verified analyzer graft.');
   const nonCode = (side) => Object.fromEntries(Object.entries(side.assetHashes).filter(([name]) => !name.endsWith('.js') && !name.endsWith('.map') && name !== 'index.html'));
   assert.deepEqual(nonCode(sides[0]), nonCode(sides[1]), 'The asset, font, and CSS outputs must be identical.');
   await fs.writeFile(path.join(output, 'build.log'), log.join('\n') + '\n');
-  const result = { baselinePath, baselineHashes, currentPaintSha256: sha256(current), currentLookSha256: sha256(currentLook),
+  const result = { baselinePath, baselineHashes, isolatedBaselinePaintSha256: sha256(baselinePaint),
+    baselineConstruction: 'Current paint.ts with only the unchanged frozen baseline analyzePaint function substituted.',
+    currentPaintSha256: sha256(current), currentLookSha256: sha256(currentLook),
     scriptSha256: sha256(await fs.readFile(script)), sourceHashes, sharedDist, sides,
     verified: { onlyAnalyzePaintDiffers: true, paintPolicyIdenticalExceptToolDefaults: true,
       isolatedBuildLookSourcesIdentical: true, assetFontCssOutputsIdentical: true },
@@ -637,9 +703,14 @@ async function cleanup(owned, browser, pids) {
 async function main() {
   if (options.help) {
     console.log('node scripts/bench-analysis-browser.mjs --baseline PATH/paint.ts --out tmp/verification/performance-final/NEW [--probe] [--skip-readiness]');
-    console.log('Requires the complete preserved original paint.ts and sibling look.ts. A present baseline manifest is verified. Missing baselines fail, never use current code.');
+    console.log('Requires the complete preserved original paint.ts and sibling look.ts. A present baseline manifest is verified. Both apps use current source, with only the frozen analyzePaint substituted into the baseline app. Missing baselines fail.');
+    console.log('--self-check verifies frozen hashes, analyzer grafting, and policy rejection without builds, previews, or browsers.');
     console.log('Builds isolated production apps under --out, starts owned tmux previews on 4165/4166, measures five fresh-context baseline/current Finish pairs, matches one exported PNG pair, profiles current separately, and collects five alternating current desktop/phone readiness pairs.');
     console.log('--probe collects one unreported calibration pair without profiles or readiness. Output must be new. Shared source, shared dist, and port 4175 are never written or stopped.');
+    return;
+  }
+  if (options['self-check']) {
+    await selfCheck();
     return;
   }
   if (options.serve) {
@@ -796,7 +867,7 @@ async function main() {
   if (failure) throw new Error(failure.message);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === script) main().catch((error) => {
+if (isMain) main().catch((error) => {
   console.error(`Browser analysis benchmark failed. ${error.stack ?? error}`);
   process.exitCode = 1;
 });
