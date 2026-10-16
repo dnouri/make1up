@@ -1,5 +1,7 @@
 # Independent final gameplay and visual review
 
+This is the independent re-evaluation of the named bundles below. Later bounded fixes resolved the landscape text collision and the full-suite deadline issue. The final verification and remaining limits are recorded in `docs/verification.md`. The review's original observations and score remain unchanged.
+
 Review date is 2026-10-16 UTC. The actual serving model was `openai-codex/gpt-6.1-sol`, as recorded in this child session's environment.
 
 ## Overview

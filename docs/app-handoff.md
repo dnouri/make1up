@@ -1,4 +1,6 @@
-# MAKE1UP application handoff
+# First MAKE1UP application handoff
+
+This document preserves the first application owner's handoff. Root integration and later refinements are complete. The current counts and API are in `docs/verification.md` and `docs/architecture.md`. The pending package-script action below was completed before the final verification run.
 
 ## Status
 

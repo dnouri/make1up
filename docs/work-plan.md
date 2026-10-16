@@ -7,7 +7,7 @@
 - [x] Phase B: Design the workflow
 - [x] Phase C: Run the loop
 - [x] Phase D: Keep the audit trail
-- [ ] Phase E: Verify and hand back
+- [x] Phase E: Verify and hand back
 
 ## Framing
 
@@ -32,7 +32,7 @@ Pi supports foreground parallel waves. It does not provide an event-driven backg
 - [x] Drive the browser and record the first visual baseline.
 - [x] Fix proven defects and improve the weakest reference-rubric items.
 - [x] Run independent behavior and visual reviews. Verify the final build.
-- [ ] Audit the decision log and produce the HTML report.
+- [x] Audit the decision log and produce the HTML report.
 
 ## Throughput checkpoint
 
@@ -86,8 +86,8 @@ Pi supports foreground parallel waves. It does not provide an event-driven backg
 - [x] Keep the original readiness miss and the later bounded pass as separate datasets. Physical phones and hardware graphics remain open.
 - [x] Check the portable frozen benchmark baseline. Evidence is `tmp/verification/portable-baseline-check.json`.
 - [x] Audit the trail with a different model family and inspect its flags. `tmp/verification/trail-review.md` records the Zai review. Closing rows and the durable console receipt address its flags.
-- [ ] Produce and inspect the HTML report.
-- [ ] Record a local commit after final review.
+- [x] Produce and inspect the HTML report. `tmp/reports/2026-10-16 - MAKE1UP browser game.html` has checked local links, loaded images, and no document overflow at 390 pixels.
+- [x] Record a local commit after final review. `ca7d3b5` contains the verified application, research, skills, benchmarks, and notices.
 - [x] Opening a PR. skip: This directory had no Git repository or remote. A local repository now exists. Publishing a remote or deployment was not part of this run.
 
 ## Status labels
