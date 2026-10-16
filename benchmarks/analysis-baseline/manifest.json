@@ -1,0 +1,11 @@
+{
+  "capturedAt": "2026-10-16T06:06:33.577Z",
+  "origin": {
+    "paint.ts": "src/paint.ts",
+    "look.ts": "src/look.ts"
+  },
+  "sources": {
+    "paint.ts": "86aa73a12eca9832a7a39e2d8a63fbc30572aaf8c25fd8b912ca4bddbb89f282",
+    "look.ts": "4b4d2388489788fdf3e37d13d070f9f0b5b5582c34132b63a4b9f96b757f26f6"
+  }
+}
