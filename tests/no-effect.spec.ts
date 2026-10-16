@@ -13,7 +13,7 @@ test.afterEach(async ({ page }) => {
 });
 
 async function openStudio(page: Page): Promise<void> {
-  await page.goto("/");
+  await page.goto("./");
   await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "ready", { timeout: 30_000 });
   await expect(page.locator("#gesture-count")).toHaveText("0 gestures");
 }

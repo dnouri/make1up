@@ -47,7 +47,7 @@ const maxPitch = 12 * Math.PI / 180;
 const maskSize = 1024;
 
 async function readMask(name: string): Promise<Uint8Array> {
-  const response = await fetch(`/face/v1/masks/${name}.png`);
+  const response = await fetch(`${import.meta.env.BASE_URL}face/v1/masks/${name}.png`);
   if (!response.ok) throw new Error(`The portrait mask ${name} could not load.`);
   const bitmap = await createImageBitmap(await response.blob(), {
     colorSpaceConversion: "none", premultiplyAlpha: "none", imageOrientation: "none",
@@ -205,7 +205,7 @@ export async function mountPortrait(
   }
 
   try {
-    const gltf = await new GLTFLoader().loadAsync("/face/v1/head.glb");
+    const gltf = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}face/v1/head.glb`);
     offset.add(gltf.scene);
     const meshes = new Map<string, Mesh>();
     gltf.scene.traverse((object) => {
@@ -239,7 +239,7 @@ export async function mountPortrait(
     if (blueMap === null) throw new Error("The portrait has no iris texture.");
     const textureLoader = new TextureLoader();
     async function loadEye(id: "hazel" | "olive"): Promise<Texture> {
-      const texture = await textureLoader.loadAsync(catalog.eyes[id].texture);
+      const texture = await textureLoader.loadAsync(`${import.meta.env.BASE_URL}${catalog.eyes[id].texture}`);
       if (disposed) {
         texture.dispose();
         throw new Error("Portrait loading stopped.");

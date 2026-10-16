@@ -12,7 +12,7 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   reporter: [["list"], ["json", { outputFile: "tmp/app-implementation/browser-results.json" }]],
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:4173/make1up/",
     browserName: "chromium",
     colorScheme: "light",
     reducedMotion: "reduce",
@@ -26,9 +26,9 @@ export default defineConfig({
     { name: "phone", use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } },
     { name: "landscape", use: { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 } },
   ],
-  webServer: {
+  webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
     command: "npm run build && npx vite preview --host 127.0.0.1 --port 4173 --strictPort",
-    url: "http://127.0.0.1:4173",
+    url: "http://127.0.0.1:4173/make1up/",
     reuseExistingServer: false,
     timeout: 120_000,
   },

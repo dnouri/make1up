@@ -13,7 +13,7 @@ test.afterEach(async ({ page }) => {
 });
 
 async function openStudio(page: Page): Promise<void> {
-  await page.goto("/");
+  await page.goto("./");
   await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "ready", { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "MAKE1UP", exact: true })).toBeVisible();
 }
@@ -277,8 +277,8 @@ test("default Guided lipstick paints the upper and lower lips as one undoable ge
     const fromBytes = (data: number[]) => new Blob([Uint8Array.from(data)], { type: "image/png" });
     const [a, b, mask, asset] = await Promise.all([
       read(fromBytes(before)), read(fromBytes(after)),
-      fetch("/face/v1/masks/lips.png").then((response) => response.blob()).then(read),
-      fetch("/face/v1/asset.json").then((response) => response.json()),
+      fetch("face/v1/masks/lips.png").then((response) => response.blob()).then(read),
+      fetch("face/v1/asset.json").then((response) => response.json()),
     ]);
     const halves = { upper: { samples: 0, changed: 0 }, lower: { samples: 0, changed: 0 } };
     const projection = asset.paint.projection;
@@ -411,7 +411,7 @@ test("the local lookbook count refreshes when another tab changes saved looks", 
   await expect(page.locator("#saved-count")).toHaveText("1");
   const other = await context.newPage();
   try {
-    await other.goto("/");
+    await other.goto("./");
     const saved = await other.evaluate(() => localStorage.getItem("make1up.lookbook.v1"));
     expect(saved).not.toBeNull();
     await page.getByRole("button", { name: "Open lookbook", exact: true }).click();
@@ -542,7 +542,7 @@ test("a WebGL-disabled browser gives a support view and keeps the asset credit r
       isMobile: Boolean(info.project.use.isMobile), hasTouch: Boolean(info.project.use.hasTouch),
     });
     page.on("pageerror", (error) => errors.push(error.message));
-    await page.goto("/");
+    await page.goto("./");
     await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "error", { timeout: 30_000 });
     await expect(page.locator("#stage-message-copy")).toHaveText("This browser could not start WebGL. Try a current browser with hardware acceleration enabled.");
     await expect(page.getByRole("button", { name: "Finish look", exact: true })).toBeDisabled();
@@ -556,7 +556,7 @@ test("a WebGL-disabled browser gives a support view and keeps the asset credit r
 
 test("an unavailable portrait has a readable recovery view rather than a blank canvas", async ({ page }) => {
   await page.route("**/face/v1/head.glb", (route) => route.abort());
-  await page.goto("/");
+  await page.goto("./");
   await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "error", { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "The portrait could not open.", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Try again", exact: true })).toBeVisible();

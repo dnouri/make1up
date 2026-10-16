@@ -2,6 +2,8 @@
 
 MAKE1UP is a local-first Three.js makeup game. Paint a 3D portrait, complete a brief, and export a cover. The game runs in the browser after its local files load. It has no account, backend, paid generation call, or simulated human opponent.
 
+Play [MAKE1UP on GitHub Pages](https://dnouri.github.io/make1up/).
+
 ## Start the studio
 
 Use Node.js 22.12 or later. This project was tested with Node.js 24.9.0.
@@ -11,7 +13,7 @@ npm ci
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`. Choose a tool and color, then drag on the face. Use **Eyes** or **Lips** for close work. **Liner** can paint anywhere on the paintable face. Blush, eyeshadow, and lipstick have safe area masks.
+Open `http://127.0.0.1:5173/make1up/`. Choose a tool and color, then drag on the face. Use **Eyes** or **Lips** for close work. **Liner** can paint anywhere on the paintable face. Blush, eyeshadow, and lipstick have safe area masks.
 
 Select **Turn** to rotate without painting. **Undo** and **Redo** operate on complete gestures. **Guided apply** makes one real, undoable stroke from the portrait's landmarks.
 
@@ -23,7 +25,7 @@ Select **Finish look** to lock the portrait and see its solo brief match. Use **
 - Select **Download PNG** for a 1080 by 1350 portrait cover with the required asset credit.
 - Select **Share** for a private remix link. The URL fragment contains the editable look. Nothing is uploaded. A very detailed look can exceed the link limit.
 
-A localhost link works only on the computer that serves it. To send remix links between devices, serve `dist/` on an accessible origin first. This project has not been deployed.
+A localhost link works only on the computer that serves it. Use [the published studio](https://dnouri.github.io/make1up/) to create remix links for other devices.
 
 ## Run the checks
 
@@ -43,7 +45,21 @@ npm run build
 npm run preview
 ```
 
-Open `http://127.0.0.1:4173`. Vite reports a large graphics chunk. It loads separately from the initial interface.
+Open `http://127.0.0.1:4173/make1up/`. Vite reports a large graphics chunk. It loads separately from the initial interface.
+
+## Publish to GitHub Pages
+
+Push to `main` to run [the Pages workflow](.github/workflows/pages.yml). The workflow installs the locked dependencies and runs the full verification suite. It publishes only the checked `dist/` directory. GitHub Pages must use **GitHub Actions** as its build source.
+
+The production base path is `/make1up/` in `vite.config.ts`. Runtime portrait assets and credit links use that base path too.
+
+Check the published game without starting a local server.
+
+```sh
+PLAYWRIGHT_BASE_URL=https://dnouri.github.io/make1up/ npm run verify:browser -- tests/pages.spec.ts
+```
+
+This check loads the portrait and fonts, opens the credit files, paints and finishes a look, reloads a remix link, and downloads a real PNG. It runs on the desktop and both phone layouts. The browser uses temporary storage, not your saved lookbook.
 
 ## Rebuild the portrait
 
