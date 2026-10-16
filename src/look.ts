@@ -139,11 +139,13 @@ export type UV = readonly [u: number, v: number];
 export type StrokePath = readonly [UV, ...UV[]];
 export type Stroke = Readonly<{
   id: string;
-  brush: StrokeBrush;
   paths: readonly [StrokePath, ...StrokePath[]];
-}>;
+}> & (
+  | Readonly<{ brush: StrokeBrush; algorithm?: never }>
+  | Readonly<{ brush: StrokeBrush & { tool: "blend" }; algorithm: "soften-v1" }>
+);
 export type Look = Readonly<{
-  version: 1;
+  version: 1 | 2;
   asset: "rain-portrait-v1";
   identity: Identity;
   strokes: readonly Stroke[];
@@ -290,14 +292,23 @@ function readPaths(raw: unknown): Result<readonly [StrokePath, ...StrokePath[]]>
   return { ok: true, value: Object.freeze([first, ...rest]) };
 }
 
-export function captureStroke(id: unknown, rawBrush: unknown, rawPaths: unknown): Result<Stroke> {
+export function captureStroke(id: unknown, rawBrush: unknown, rawPaths: unknown, rawAlgorithm?: unknown): Result<Stroke> {
   if (typeof id !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(id)) {
     return failure("A stroke ID must have one to 64 letters, digits, underscores, or hyphens.");
   }
   const brush = readStrokeBrush(rawBrush);
   if (!brush.ok) return brush;
+  if (rawAlgorithm !== undefined && (rawAlgorithm !== "soften-v1" || brush.value.tool !== "blend")) {
+    return failure("Unknown stroke algorithm or incompatible makeup tool.");
+  }
   const paths = readPaths(rawPaths);
   if (!paths.ok) return paths;
+  if (rawAlgorithm === "soften-v1") {
+    return { ok: true, value: Object.freeze({
+      id, brush: Object.freeze({ ...brush.value, tool: "blend" as const }),
+      paths: paths.value, algorithm: rawAlgorithm,
+    }) };
+  }
   return { ok: true, value: Object.freeze({ id, brush: brush.value, paths: paths.value }) };
 }
 
@@ -318,7 +329,10 @@ export function appendStroke(look: Look, stroke: Stroke): Result<Look> {
   if (look.strokes.reduce((sum, item) => sum + pointCount(item), pointCount(stroke)) > limits.pointsPerLook) {
     return failure("This look has reached its paint point limit.");
   }
-  return { ok: true, value: Object.freeze({ ...look, strokes: Object.freeze([...look.strokes, stroke]) }) };
+  return { ok: true, value: Object.freeze({
+    ...look, version: stroke.algorithm === undefined ? look.version : 2,
+    strokes: Object.freeze([...look.strokes, stroke]),
+  }) };
 }
 
 export function withIdentity(look: Look, identity: Identity): Look {
@@ -330,7 +344,7 @@ export function clearMakeup(look: Look): Look {
 }
 
 export function decodeLook(raw: unknown): Result<Look> {
-  if (!record(raw) || raw.version !== 1 || raw.asset !== "rain-portrait-v1") {
+  if (!record(raw) || (raw.version !== 1 && raw.version !== 2) || raw.asset !== "rain-portrait-v1") {
     return failure("This look has an unknown version or portrait asset.");
   }
   const identity = identityFromInput(raw.identity);
@@ -343,7 +357,8 @@ export function decodeLook(raw: unknown): Result<Look> {
   let points = 0;
   for (const item of raw.strokes) {
     if (!record(item)) return failure("A saved gesture is not an object.");
-    const stroke = captureStroke(item.id, item.brush, item.paths);
+    if (raw.version === 1 && item.algorithm !== undefined) return failure("Tagged strokes require look version 2.");
+    const stroke = captureStroke(item.id, item.brush, item.paths, item.algorithm);
     if (!stroke.ok) return stroke;
     if (ids.has(stroke.value.id)) return failure("A saved look repeats a gesture ID.");
     ids.add(stroke.value.id);
@@ -352,7 +367,7 @@ export function decodeLook(raw: unknown): Result<Look> {
     strokes.push(stroke.value);
   }
   return { ok: true, value: Object.freeze({
-    version: 1, asset: "rain-portrait-v1", identity: identity.value,
+    version: raw.version, asset: "rain-portrait-v1", identity: identity.value,
     strokes: Object.freeze(strokes),
   }) };
 }
@@ -387,6 +402,7 @@ export function encodeLook(look: Look): string {
         softness: stroke.brush.softness, finish: stroke.brush.finish,
       },
       paths: stroke.paths,
+      ...(stroke.algorithm === undefined ? {} : { algorithm: stroke.algorithm }),
     })),
   });
 }
@@ -396,5 +412,5 @@ export function lookFingerprint(look: Look): string {
   for (const byte of new TextEncoder().encode(encodeLook(look))) {
     hash = BigInt.asUintN(64, (hash ^ BigInt(byte)) * 0x100000001b3n);
   }
-  return `rain-v1-${hash.toString(16).padStart(16, "0")}`;
+  return `rain-v${look.version}-${hash.toString(16).padStart(16, "0")}`;
 }

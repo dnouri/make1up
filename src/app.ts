@@ -75,7 +75,7 @@ app.innerHTML = `
         <fieldset class="color-section"><legend>COLOR STORY</legend><div class="swatch-list">${Object.values(palette).map((entry) => `<button class="swatch" data-color="${entry.color}" aria-label="${entry.label} color" aria-pressed="false" title="${entry.label}" style="--swatch:${entry.color}"><span></span></button>`).join("")}</div><div class="custom-color-row"><span id="color-name">Rose</span><label class="custom-color">Custom color <input type="color" id="custom-color" aria-label="Custom makeup color" value="#cc5075"><span class="custom-color-icon" aria-hidden="true">+</span></label></div></fieldset>
         <fieldset class="brush-section"><legend>THE FINER DETAILS</legend>
           <label class="range-control" for="brush-size"><span>Brush size</span><output id="brush-size-value" data-brush-value="size" for="brush-size">4.5%</output><input id="brush-size" data-brush="size" aria-label="Brush size" type="range" min="0.003" max="0.08" step="0.001" value="0.045"></label>
-          <label class="range-control" for="brush-opacity"><span>Opacity</span><output id="brush-opacity-value" data-brush-value="opacity" for="brush-opacity">55%</output><input id="brush-opacity" data-brush="opacity" aria-label="Opacity" type="range" min="0" max="1" step="0.01" value="0.55"></label>
+          <label class="range-control" for="brush-opacity"><span id="brush-opacity-label">Opacity</span><output id="brush-opacity-value" data-brush-value="opacity" for="brush-opacity">55%</output><input id="brush-opacity" data-brush="opacity" aria-label="Opacity" type="range" min="0" max="1" step="0.01" value="0.55"></label>
           <label class="range-control" for="brush-softness"><span>Softness</span><output id="brush-softness-value" data-brush-value="softness" for="brush-softness">85%</output><input id="brush-softness" data-brush="softness" aria-label="Softness" type="range" min="0" max="1" step="0.01" value="0.85"></label>
           <label class="range-control" for="brush-finish"><span>Gloss</span><output id="brush-finish-value" data-brush-value="finish" for="brush-finish">0%</output><input id="brush-finish" data-brush="finish" aria-label="Gloss" type="range" min="0" max="1" step="0.01" value="0"></label>
         </fieldset>
@@ -144,7 +144,7 @@ const toolDescriptions: Record<ToolId, string> = {
   liner: "Free painting anywhere on the visible face, with a precise brush.",
   sparkle: "A five-point stamp. One touch, a little light.",
   erase: "Remove makeup, never the skin beneath it.",
-  blend: "Soften the makeup already on the face. No added color.",
+  blend: "Soften existing makeup edges. More passes build the effect. No added color.",
 };
 
 type GuideKey = "lipsCenter" | "lipsLeftCorner" | "lipsRightCorner" | "cheekLeft" | "cheekRight" | "upperLidLeft" | "upperLidRight";
@@ -323,8 +323,13 @@ function render(): void {
   const regionHint = region === "valid" ? "Anywhere on the paintable face" : `${regions[region].label} only`;
   query("#quick-active-tool").textContent = tools[brush.tool].label;
   query("#allowed-region").textContent = regionHint;
-  query("#canvas-help").textContent = before ? "Before view. Select Before / after to keep painting." : !editing ? "Your finished look. Save it, share it, or make it a new beginning." : editing.navigation === "turn" ? "Turn mode. Drag to rotate. Choose Paint to make a mark." : `${tools[brush.tool].label}. ${regionHint}. Choose a color and paint.`;
+  const actionHint = brush.tool === "blend" ? "Move over existing makeup to soften its edges. More passes increase the effect."
+    : brush.tool === "erase" ? "Drag over makeup to remove it." : "Choose a color and paint.";
+  query("#canvas-help").textContent = before ? "Before view. Select Before / after to keep painting." : !editing ? "Your finished look. Save it, share it, or make it a new beginning." : editing.navigation === "turn" ? "Turn mode. Drag to rotate. Choose Paint to make a mark." : `${tools[brush.tool].label}. ${regionHint}. ${actionHint}`;
   const pigment = tools[brush.tool].operation === "pigment";
+  const opacityLabel = brush.tool === "blend" ? "Strength" : "Opacity";
+  query("#brush-opacity-label").textContent = opacityLabel;
+  query("#brush-opacity").setAttribute("aria-label", opacityLabel);
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-color]")) {
     button.setAttribute("aria-pressed", String(brush.color.toLowerCase() === button.dataset.color));
     button.disabled = !pigment;
