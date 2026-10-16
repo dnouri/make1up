@@ -38,9 +38,9 @@ export const catalog = {
     "neutral-rain": { label: "Rain portrait", asset: "rain-portrait-v1" },
   },
   eyes: {
-    blue: { label: "Blue", texture: "face/v1/eyes-blue.png" },
-    hazel: { label: "Hazel", texture: "face/v1/eyes-hazel.png" },
-    olive: { label: "Olive", texture: "face/v1/eyes-olive.png" },
+    blue: { label: "Blue", texture: "/face/v1/eyes-blue.png" },
+    hazel: { label: "Hazel", texture: "/face/v1/eyes-hazel.png" },
+    olive: { label: "Olive", texture: "/face/v1/eyes-olive.png" },
   },
   complexions: {
     source: { label: "Source warm", tint: "#ffffff", status: "asset-supported" },

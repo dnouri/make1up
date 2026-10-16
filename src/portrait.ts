@@ -239,7 +239,7 @@ export async function mountPortrait(
     if (blueMap === null) throw new Error("The portrait has no iris texture.");
     const textureLoader = new TextureLoader();
     async function loadEye(id: "hazel" | "olive"): Promise<Texture> {
-      const texture = await textureLoader.loadAsync(`${import.meta.env.BASE_URL}${catalog.eyes[id].texture}`);
+      const texture = await textureLoader.loadAsync(`${import.meta.env.BASE_URL}${catalog.eyes[id].texture.slice(1)}`);
       if (disposed) {
         texture.dispose();
         throw new Error("Portrait loading stopped.");
