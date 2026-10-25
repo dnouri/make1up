@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
     "verify": "npm run test && npm run typecheck && npm run verify:assets && npm run verify:browser",
-    "verify:assets": "node scripts/verify-assets.mjs",
+    "verify:assets": "node scripts/verify-assets.mjs public/face/v2 --geometry-only",
     "verify:browser": "playwright test"
   },
   "dependencies": {

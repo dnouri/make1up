@@ -1,6 +1,6 @@
-import { avatarFromInput, defaultIdentity, identityFromInput, upgradeIdentity } from "./avatar";
-import type { AvatarIdentity, ClassicIdentity, PortraitIdentity } from "./avatar";
-export { catalog, defaultIdentity, identityFromInput } from "./avatar";
+import { defaultIdentity, identityFromInput } from "./avatar";
+import type { AvatarIdentity } from "./avatar";
+export { defaultIdentity, identityFromInput } from "./avatar";
 
 export type Result<T> =
   | Readonly<{ ok: true; value: T }>
@@ -37,13 +37,10 @@ export const regions = {
 } as const;
 export type Region = keyof typeof regions;
 
-export type PaintPolicy = "regional-v1" | "face-v2";
-export const currentPaintPolicy: PaintPolicy = "face-v2";
-
 type ToolDefinition = Readonly<{
   label: string;
   operation: "pigment" | "erase" | "blend";
-  region: Readonly<Record<PaintPolicy, Region>>;
+  region: Region;
   tip: "round" | "star";
   placement: "continuous" | "stamp";
   defaults: Readonly<{
@@ -53,38 +50,38 @@ type ToolDefinition = Readonly<{
 
 export const tools = {
   blush: {
-    label: "Blush", operation: "pigment", region: { "regional-v1": "cheeks", "face-v2": "valid" }, tip: "round", placement: "continuous",
+    label: "Blush", operation: "pigment", region: "valid", tip: "round", placement: "continuous",
     defaults: { color: palette.rose.color, radius: 0.045, opacity: 0.55, softness: 0.85, finish: 0 },
   },
   shadow: {
-    label: "Eyeshadow", operation: "pigment", region: { "regional-v1": "lids", "face-v2": "valid" }, tip: "round", placement: "continuous",
+    label: "Eyeshadow", operation: "pigment", region: "valid", tip: "round", placement: "continuous",
     defaults: { color: palette.orchid.color, radius: 0.028, opacity: 0.8, softness: 0.65, finish: 0.1 },
   },
   lipstick: {
-    label: "Lipstick", operation: "pigment", region: { "regional-v1": "lips", "face-v2": "lips" }, tip: "round", placement: "continuous",
+    label: "Lipstick", operation: "pigment", region: "lips", tip: "round", placement: "continuous",
     defaults: { color: palette.rose.color, radius: 0.055, opacity: 0.95, softness: 0.3, finish: 0.8 },
   },
   liner: {
-    label: "Liner", operation: "pigment", region: { "regional-v1": "valid", "face-v2": "valid" }, tip: "round", placement: "continuous",
+    label: "Liner", operation: "pigment", region: "valid", tip: "round", placement: "continuous",
     defaults: { color: palette.ink.color, radius: 0.006, opacity: 1, softness: 0.1, finish: 0 },
   },
   sparkle: {
-    label: "Sparkle stamp", operation: "pigment", region: { "regional-v1": "valid", "face-v2": "valid" }, tip: "star", placement: "stamp",
+    label: "Sparkle stamp", operation: "pigment", region: "valid", tip: "star", placement: "stamp",
     defaults: { color: palette.pearl.color, radius: 0.018, opacity: 1, softness: 0, finish: 1 },
   },
   erase: {
-    label: "Erase makeup", operation: "erase", region: { "regional-v1": "valid", "face-v2": "valid" }, tip: "round", placement: "continuous",
+    label: "Erase makeup", operation: "erase", region: "valid", tip: "round", placement: "continuous",
     defaults: { color: palette.pearl.color, radius: 0.04, opacity: 1, softness: 0.4, finish: 0 },
   },
   blend: {
-    label: "Blend existing makeup", operation: "blend", region: { "regional-v1": "valid", "face-v2": "valid" }, tip: "round", placement: "continuous",
+    label: "Blend existing makeup", operation: "blend", region: "valid", tip: "round", placement: "continuous",
     defaults: { color: palette.pearl.color, radius: 0.04, opacity: 0.7, softness: 0.65, finish: 0 },
   },
 } as const satisfies Record<string, ToolDefinition>;
 export type ToolId = keyof typeof tools;
 
-export function toolRegion(tool: ToolId, policy: PaintPolicy): Region {
-  return tools[tool].region[policy];
+export function toolRegion(tool: ToolId): Region {
+  return tools[tool].region;
 }
 
 export type Brush = Readonly<{
@@ -101,18 +98,17 @@ export type UV = readonly [u: number, v: number];
 export type StrokePath = readonly [UV, ...UV[]];
 export type Stroke = Readonly<{
   id: string;
-  policy: PaintPolicy;
   paths: readonly [StrokePath, ...StrokePath[]];
 }> & (
-  | Readonly<{ brush: StrokeBrush; algorithm?: never }>
+  | Readonly<{ brush: StrokeBrush & { tool: Exclude<ToolId, "blend"> }; algorithm?: never }>
   | Readonly<{ brush: StrokeBrush & { tool: "blend" }; algorithm: "soften-v1" }>
 );
-export type Look =
-  | Readonly<{ version: 1 | 2; asset: "rain-portrait-v1"; identity: ClassicIdentity; strokes: readonly Stroke[] }>
-  | Readonly<{ version: 3; asset: "rain-portrait-v1"; identity: ClassicIdentity; strokes: readonly Stroke[] }>
-  | Readonly<{ version: 3; asset: "rain-portrait-v2"; identity: AvatarIdentity; strokes: readonly Stroke[] }>;
-export type ClassicLook = Extract<Look, { asset: "rain-portrait-v1" }>;
-export type CustomLook = Extract<Look, { asset: "rain-portrait-v2" }>;
+export type Look = Readonly<{
+  version: 2;
+  asset: "rain-portrait-v2";
+  identity: AvatarIdentity;
+  strokes: readonly Stroke[];
+}>;
 
 export type Criterion = Readonly<{ id: string; label: string; points: number }> & (
   | Readonly<{ kind: "coverage"; region: Region; range: readonly [number, number] }>
@@ -240,40 +236,29 @@ function readPaths(raw: unknown): Result<readonly [StrokePath, ...StrokePath[]]>
   return { ok: true, value: Object.freeze([first, ...rest]) };
 }
 
-function readStoredStroke(id: unknown, rawBrush: unknown, rawPaths: unknown, policy: PaintPolicy, rawAlgorithm: unknown): Result<Stroke> {
+function readStoredStroke(id: unknown, rawBrush: unknown, rawPaths: unknown, algorithm: unknown): Result<Stroke> {
   if (typeof id !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(id)) {
     return failure("A stroke ID must have one to 64 letters, digits, underscores, or hyphens.");
   }
   const brush = readStrokeBrush(rawBrush);
   if (!brush.ok) return brush;
-  if (rawAlgorithm !== undefined && (rawAlgorithm !== "soften-v1" || brush.value.tool !== "blend")) {
+  if (brush.value.tool === "blend" ? algorithm !== "soften-v1" : algorithm !== undefined) {
     return failure("Unknown stroke algorithm or incompatible makeup tool.");
   }
   const paths = readPaths(rawPaths);
   if (!paths.ok) return paths;
-  if (rawAlgorithm === "soften-v1") {
-    return { ok: true, value: Object.freeze({
-      id, policy, brush: Object.freeze({ ...brush.value, tool: "blend" as const }),
-      paths: paths.value, algorithm: rawAlgorithm,
-    }) };
-  }
-  return { ok: true, value: Object.freeze({ id, policy, brush: brush.value, paths: paths.value }) };
+  return brush.value.tool === "blend"
+    ? { ok: true, value: Object.freeze({ id, brush: Object.freeze({ ...brush.value, tool: brush.value.tool }), paths: paths.value, algorithm: "soften-v1" }) }
+    : { ok: true, value: Object.freeze({ id, brush: Object.freeze({ ...brush.value, tool: brush.value.tool }), paths: paths.value }) };
 }
 
 export function captureStroke(id: unknown, rawBrush: unknown, rawPaths: unknown): Result<Stroke> {
   const algorithm = record(rawBrush) && rawBrush.tool === "blend" ? "soften-v1" : undefined;
-  return readStoredStroke(id, rawBrush, rawPaths, currentPaintPolicy, algorithm);
+  return readStoredStroke(id, rawBrush, rawPaths, algorithm);
 }
 
-export function newLook(): ClassicLook;
-export function newLook(identity: ClassicIdentity): ClassicLook;
-export function newLook(identity: AvatarIdentity): CustomLook;
-export function newLook(identity: PortraitIdentity): Look;
-export function newLook(identity: PortraitIdentity = defaultIdentity): Look {
-  const strokes = Object.freeze([]);
-  return identity.kind === "classic"
-    ? Object.freeze({ version: 1, asset: "rain-portrait-v1", identity: Object.freeze({ ...identity }), strokes })
-    : Object.freeze({ version: 3, asset: "rain-portrait-v2", identity: Object.freeze({ ...identity }), strokes });
+export function newLook(): Look {
+  return Object.freeze({ version: 2, asset: "rain-portrait-v2", identity: defaultIdentity, strokes: Object.freeze([]) });
 }
 
 function pointCount(stroke: Stroke): number {
@@ -286,26 +271,16 @@ export function appendStroke(look: Look, stroke: Stroke): Result<Look> {
   if (look.strokes.reduce((sum, item) => sum + pointCount(item), pointCount(stroke)) > limits.pointsPerLook) {
     return failure("This look has reached its paint point limit.");
   }
-  return { ok: true, value: Object.freeze({
-    ...look, version: 3,
-    strokes: Object.freeze([...look.strokes, stroke]),
-  }) };
+  return { ok: true, value: Object.freeze({ ...look, strokes: Object.freeze([...look.strokes, stroke]) }) };
 }
 
-export function withIdentity(look: Look, identity: PortraitIdentity): Look {
-  if (identity.kind === look.identity.kind
-    && Object.entries(identity).every(([key, value]) => Reflect.get(look.identity, key) === value)) return look;
-  return identity.kind === "classic"
-    ? Object.freeze({ version: 3, asset: "rain-portrait-v1", identity: Object.freeze({ ...identity }), strokes: look.strokes })
-    : Object.freeze({ version: 3, asset: "rain-portrait-v2", identity: Object.freeze({ ...identity }), strokes: look.strokes });
-}
-
-export function upgradePortrait(look: Look): Look {
-  return look.identity.kind === "custom" ? look : withIdentity(look, upgradeIdentity(look.identity));
+export function withIdentity(look: Look, identity: AvatarIdentity): Look {
+  if (Object.entries(identity).every(([key, value]) => Reflect.get(look.identity, key) === value)) return look;
+  return Object.freeze({ ...look, identity: Object.freeze({ ...identity }) });
 }
 
 export function clearMakeup(look: Look): Look {
-  return look.strokes.length === 0 ? look : Object.freeze({ ...look, version: 3, strokes: Object.freeze([]) });
+  return look.strokes.length === 0 ? look : Object.freeze({ ...look, strokes: Object.freeze([]) });
 }
 
 function exactKeys(raw: Record<string, unknown>, keys: readonly string[]): boolean {
@@ -313,19 +288,13 @@ function exactKeys(raw: Record<string, unknown>, keys: readonly string[]): boole
 }
 
 export function decodeLook(raw: unknown): Result<Look> {
-  if (!record(raw) || (raw.version !== 1 && raw.version !== 2 && raw.version !== 3)
-    || (raw.asset !== "rain-portrait-v1" && (raw.version !== 3 || raw.asset !== "rain-portrait-v2"))) {
+  if (!record(raw) || raw.version !== 2 || raw.asset !== "rain-portrait-v2") {
     return failure("This look has an unknown version or portrait asset.");
   }
-  if (raw.version === 3 && (!exactKeys(raw, ["version", "asset", "identity", "strokes"])
-    || !record(raw.identity)
-    || !exactKeys(raw.identity, raw.asset === "rain-portrait-v1"
-      ? ["kind", "geometry", "eyes", "complexion", "hairColor", "hairStyle"]
-      : ["kind", "face", "nose", "mouth", "eyeShape", "complexion", "eyes", "hairColor", "hairStyle"])
-    || raw.identity.kind !== (raw.asset === "rain-portrait-v1" ? "classic" : "custom"))) {
+  if (!exactKeys(raw, ["version", "asset", "identity", "strokes"])) {
     return failure("The saved look has unsupported or missing document fields.");
   }
-  const identity = raw.asset === "rain-portrait-v1" ? identityFromInput(raw.identity) : avatarFromInput(raw.identity);
+  const identity = identityFromInput(raw.identity);
   if (!identity.ok) return identity;
   if (!Array.isArray(raw.strokes) || raw.strokes.length > limits.strokes) {
     return failure("The saved look has too many gestures or no gesture list.");
@@ -335,17 +304,12 @@ export function decodeLook(raw: unknown): Result<Look> {
   let points = 0;
   for (const item of raw.strokes) {
     if (!record(item)) return failure("A saved gesture is not an object.");
-    if (raw.version === 1 && item.algorithm !== undefined) return failure("Tagged strokes require look version 2.");
-    if (raw.version === 3 && (!exactKeys(item, item.algorithm === undefined
-      ? ["id", "policy", "brush", "paths"] : ["id", "policy", "brush", "paths", "algorithm"])
-      || !record(item.brush) || !exactKeys(item.brush, ["tool", "color", "radius", "opacity", "softness", "finish"]))) {
+    if (!exactKeys(item, item.algorithm === undefined
+      ? ["id", "brush", "paths"] : ["id", "brush", "paths", "algorithm"])
+      || !record(item.brush) || !exactKeys(item.brush, ["tool", "color", "radius", "opacity", "softness", "finish"])) {
       return failure("A saved gesture has unsupported or missing fields.");
     }
-    if (raw.version === 3 && item.policy !== "regional-v1" && item.policy !== "face-v2") {
-      return failure("Unknown stroke paint policy.");
-    }
-    const policy = raw.version === 3 && item.policy === "face-v2" ? "face-v2" : "regional-v1";
-    const stroke = readStoredStroke(item.id, item.brush, item.paths, policy, item.algorithm);
+    const stroke = readStoredStroke(item.id, item.brush, item.paths, item.algorithm);
     if (!stroke.ok) return stroke;
     if (ids.has(stroke.value.id)) return failure("A saved look repeats a gesture ID.");
     ids.add(stroke.value.id);
@@ -353,10 +317,9 @@ export function decodeLook(raw: unknown): Result<Look> {
     if (points > limits.pointsPerLook) return failure("The saved look has too many paint points.");
     strokes.push(stroke.value);
   }
-  const frozenStrokes = Object.freeze(strokes);
-  return identity.value.kind === "classic"
-    ? { ok: true, value: Object.freeze({ version: raw.version, asset: "rain-portrait-v1", identity: identity.value, strokes: frozenStrokes }) }
-    : { ok: true, value: Object.freeze({ version: 3, asset: "rain-portrait-v2", identity: identity.value, strokes: frozenStrokes }) };
+  return { ok: true, value: Object.freeze({
+    version: 2, asset: "rain-portrait-v2", identity: identity.value, strokes: Object.freeze(strokes),
+  }) };
 }
 
 export function decodeLookJSON(json: string): Result<Look> {
@@ -372,36 +335,24 @@ export function decodeLookJSON(json: string): Result<Look> {
   return decodeLook(raw);
 }
 
-function strokeDocument(stroke: Stroke, current: boolean) {
-  return {
-    id: stroke.id,
-    ...(current ? { policy: stroke.policy } : {}),
-    brush: {
-      tool: stroke.brush.tool, color: stroke.brush.color,
-      radius: stroke.brush.radius, opacity: stroke.brush.opacity,
-      softness: stroke.brush.softness, finish: stroke.brush.finish,
-    },
-    paths: stroke.paths,
-    ...(stroke.algorithm === undefined ? {} : { algorithm: stroke.algorithm }),
-  };
-}
-
 export function encodeLook(look: Look): string {
   return JSON.stringify({
     version: look.version,
     asset: look.asset,
-    identity: look.identity.kind === "classic" ? {
-      ...(look.version === 3 ? { kind: look.identity.kind } : {}),
-      geometry: look.identity.geometry, eyes: look.identity.eyes,
-      complexion: look.identity.complexion, hairColor: look.identity.hairColor,
-      hairStyle: look.identity.hairStyle,
-    } : {
-      kind: look.identity.kind, face: look.identity.face, nose: look.identity.nose,
-      mouth: look.identity.mouth, eyeShape: look.identity.eyeShape,
-      complexion: look.identity.complexion, eyes: look.identity.eyes,
+    identity: {
+      face: look.identity.face, nose: look.identity.nose, mouth: look.identity.mouth,
+      eyeShape: look.identity.eyeShape, complexion: look.identity.complexion, eyes: look.identity.eyes,
       hairColor: look.identity.hairColor, hairStyle: look.identity.hairStyle,
     },
-    strokes: look.strokes.map((stroke) => strokeDocument(stroke, look.version === 3)),
+    strokes: look.strokes.map((stroke) => ({
+      id: stroke.id,
+      brush: {
+        tool: stroke.brush.tool, color: stroke.brush.color, radius: stroke.brush.radius,
+        opacity: stroke.brush.opacity, softness: stroke.brush.softness, finish: stroke.brush.finish,
+      },
+      paths: stroke.paths,
+      ...(stroke.algorithm === undefined ? {} : { algorithm: stroke.algorithm }),
+    })),
   });
 }
 
@@ -410,5 +361,5 @@ export function lookFingerprint(look: Look): string {
   for (const byte of new TextEncoder().encode(encodeLook(look))) {
     hash = BigInt.asUintN(64, (hash ^ BigInt(byte)) * 0x100000001b3n);
   }
-  return `rain-v${look.version}-${hash.toString(16).padStart(16, "0")}`;
+  return `rain-v2-${hash.toString(16).padStart(16, "0")}`;
 }

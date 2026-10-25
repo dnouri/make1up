@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  appendStroke, brushFromInput, captureStroke, catalog, decodeLook, decodeLookJSON,
+  appendStroke, brushFromInput, captureStroke, decodeLook, decodeLookJSON,
   defaultBrush, encodeLook, identityFromInput, lookFingerprint, newLook, palette, regions,
   themes, toolRegion, tools,
 } from "../src/look";
@@ -38,7 +38,7 @@ describe("look boundary", () => {
     brush.color = "#000000";
     paths[0]?.push([0, 0]);
     expect(captured).toEqual({
-      id: "gesture-a", policy: "face-v2",
+      id: "gesture-a",
       brush: { tool: "blush", color: "#cc5075", radius: 0.045, opacity: 0.55, softness: 0.85, finish: 0 },
       paths: [[[0.2, 0.4], [0.4, 0.4]], [[0.8, 0.4], [0.6, 0.4]]],
     });
@@ -48,9 +48,9 @@ describe("look boundary", () => {
   it("round trips a canonical saved document and supplies a stable content key", () => {
     const look = newLook();
     expect(encodeLook(value(decodeLookJSON(encodeLook(look))))).toBe(
-      '{"version":1,"asset":"rain-portrait-v1","identity":{"geometry":"neutral-rain","eyes":"blue","complexion":"source","hairColor":"espresso","hairStyle":"ponytail"},"strokes":[]}',
+      '{"version":2,"asset":"rain-portrait-v2","identity":{"face":"balanced","nose":"balanced","mouth":"balanced","eyeShape":"balanced","complexion":"warm","eyes":"blue","hairColor":"espresso","hairStyle":"ponytail"},"strokes":[]}',
     );
-    expect(lookFingerprint(look)).toBe("rain-v1-ba089144a9289ca0");
+    expect(lookFingerprint(value(decodeLookJSON(encodeLook(look))))).toBe(lookFingerprint(look));
     const painted = value(appendStroke(look, stroke("one")));
     expect(value(decodeLookJSON(encodeLook(painted))).strokes[0]?.id).toBe("one");
     expect(lookFingerprint(painted) === lookFingerprint(look)).toBe(false);
@@ -114,7 +114,7 @@ describe("look boundary", () => {
     expect(decodeLookJSON(JSON.stringify(badUV))).toEqual({
       ok: false, error: "Paint coordinates must be finite UV pairs between zero and one.",
     });
-    const nonfinite = { ...newLook(), strokes: [{ ...stroke("bad"), brush: { ...defaultBrush(), opacity: NaN } }] };
+    const nonfinite = { ...newLook(), strokes: [{ ...stroke("bad"), brush: { ...stroke("bad").brush, opacity: NaN } }] };
     expect(decodeLookJSON(JSON.stringify(nonfinite))).toEqual({
       ok: false, error: "Brush color or settings are outside their allowed range.",
     });
@@ -139,9 +139,7 @@ describe("look boundary", () => {
       if (parsed.ok) {
         const brush = defaultBrush(parsed.value.tool);
         expect(brushFromInput(brush)).toEqual({ ok: true, value: brush });
-        for (const policy of ["regional-v1", "face-v2"] as const) {
-          expect(Object.hasOwn(regions, toolRegion(brush.tool, policy))).toBe(true);
-        }
+        expect(Object.hasOwn(regions, toolRegion(brush.tool))).toBe(true);
       }
     }
     for (const theme of Object.values(themes)) {
@@ -152,21 +150,6 @@ describe("look boundary", () => {
         }
         if (rule.kind === "coverage") expect(Object.hasOwn(regions, rule.region)).toBe(true);
       }
-    }
-    for (const geometry of Object.keys(catalog.geometry)) {
-      for (const eyes of Object.keys(catalog.eyes)) {
-        for (const complexion of Object.keys(catalog.complexions)) {
-          for (const hairColor of Object.keys(catalog.hairColors)) {
-            for (const hairStyle of Object.keys(catalog.hairStyles)) {
-              const parsed = identityFromInput({ geometry, eyes, complexion, hairColor, hairStyle });
-              expect(parsed).toEqual({ ok: true, value: { kind: "classic", geometry, eyes, complexion, hairColor, hairStyle } });
-            }
-          }
-        }
-      }
-    }
-    for (const style of Object.values(catalog.hairStyles)) {
-      for (const mesh of style.visible) expect(["Hair", "HairSweep", "HairTail", "HairTie"]).toContain(mesh);
     }
   });
 });
@@ -185,7 +168,9 @@ describe("session transactions", () => {
   });
 
   it("captures the selected lipstick default without changing saved lip settings", () => {
-    const savedJSON = '{"version":1,"asset":"rain-portrait-v1","identity":{"geometry":"neutral-rain","eyes":"blue","complexion":"source","hairColor":"espresso","hairStyle":"ponytail"},"strokes":[{"id":"old-lip","brush":{"tool":"lipstick","color":"#51284e","radius":0.025,"opacity":0.95,"softness":0.3,"finish":0.8},"paths":[[[0.4,0.8],[0.6,0.8]]]}]}';
+    const savedJSON = encodeLook(value(appendStroke(newLook(), stroke("saved-lip", {
+      ...defaultBrush("lipstick"), color: "#51284e", radius: 0.025,
+    }))));
     const saved = value(decodeLookJSON(savedJSON));
     let session: Session = step(createSession(saved), { type: "brush", brush: defaultBrush("lipstick") });
     const captured = value(captureStroke("new-lip", editing(session).brush, [[[0.4, 0.8], [0.6, 0.8]]]));

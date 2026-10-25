@@ -277,12 +277,12 @@ test("default Guided lipstick paints the upper and lower lips as one undoable ge
     const fromBytes = (data: number[]) => new Blob([Uint8Array.from(data)], { type: "image/png" });
     const [a, b, mask, asset] = await Promise.all([
       read(fromBytes(before)), read(fromBytes(after)),
-      fetch("face/v1/masks/lips.png").then((response) => response.blob()).then(read),
-      fetch("face/v1/asset.json").then((response) => response.json()),
+      fetch("face/v2/masks/lips.png").then((response) => response.blob()).then(read),
+      fetch("face/v2/asset.json").then((response) => response.json()),
     ]);
     const halves = { upper: { samples: 0, changed: 0 }, lower: { samples: 0, changed: 0 } };
-    const projection = asset.paint.projection;
-    const split = asset.landmarks.lipsCenter.paintUV[1];
+    const projection = asset.paintAtlas.paint.projection;
+    const split = asset.paintAtlas.landmarks.lipsCenter.paintUV[1];
     for (let y = 0; y < mask.height; y += 1) {
       for (let x = 0; x < mask.width; x += 1) {
         if (mask.data[(y * mask.width + x) * 4]! < 128) continue;
@@ -366,9 +366,9 @@ test("local save survives reload, restores paint, exports a real PNG, and opens 
   await expect(page.locator("#gesture-count")).toHaveText("2 gestures");
   await page.locator(".appearance-section > summary").click();
   await page.getByRole("combobox", { name: "Iris color", exact: true }).selectOption("olive");
-  await page.getByRole("combobox", { name: "Complexion tint", exact: true }).selectOption("deep");
-  await page.getByRole("combobox", { name: "Hair color tint", exact: true }).selectOption("plum");
-  await page.getByRole("combobox", { name: "Fitted hair", exact: true }).selectOption("tucked");
+  await page.getByRole("combobox", { name: "Complexion", exact: true }).selectOption("deep");
+  await page.getByRole("combobox", { name: "Hair color", exact: true }).selectOption("plum");
+  await page.getByRole("combobox", { name: "Hairstyle", exact: true }).selectOption("bun");
   const originalPNG = await downloadPNG(page, info, "original-look.png");
   await page.getByRole("button", { name: "Save look", exact: true }).click();
   await expect(page.locator("#app-status")).toHaveText("Saved to your lookbook on this device.");
@@ -412,14 +412,14 @@ test("the local lookbook count refreshes when another tab changes saved looks", 
   const other = await context.newPage();
   try {
     await other.goto("./");
-    const saved = await other.evaluate(() => localStorage.getItem("make1up.lookbook.v1"));
+    const saved = await other.evaluate(() => localStorage.getItem("make1up.lookbook.v2"));
     expect(saved).not.toBeNull();
     await page.getByRole("button", { name: "Open lookbook", exact: true }).click();
     await expect(page.locator(".saved-look")).toHaveCount(1);
-    await other.evaluate(() => localStorage.removeItem("make1up.lookbook.v1"));
+    await other.evaluate(() => localStorage.removeItem("make1up.lookbook.v2"));
     await expect(page.locator("#saved-count")).toHaveText("0");
     await expect(page.locator("#lookbook-content")).toContainText("Your first cover belongs here.");
-    await other.evaluate((value) => localStorage.setItem("make1up.lookbook.v1", value!), saved);
+    await other.evaluate((value) => localStorage.setItem("make1up.lookbook.v2", value!), saved);
     await expect(page.locator("#saved-count")).toHaveText("1");
     await expect(page.locator(".saved-look")).toHaveCount(1);
   } finally {
@@ -487,7 +487,7 @@ test("an older capture cannot save over a newer edit", async ({ page }) => {
 });
 
 test("corrupt storage and quota failures explain the problem without losing makeup", async ({ page }, info) => {
-  await page.addInitScript(() => { localStorage.setItem("make1up.lookbook.v1", "{broken"); });
+  await page.addInitScript(() => { localStorage.setItem("make1up.lookbook.v2", "{broken"); });
   await openStudio(page);
   await page.getByRole("button", { name: "Open lookbook", exact: true }).click();
   await expect(page.locator("#lookbook-content")).toContainText("The local lookbook is damaged.");
@@ -496,12 +496,12 @@ test("corrupt storage and quota failures explain the problem without losing make
   await page.getByRole("button", { name: "Save look", exact: true }).click();
   await expect(page.locator("#app-status")).toContainText("The local lookbook is damaged.");
   await expect(page.locator("#gesture-count")).toHaveText("1 gesture");
-  expect(await page.evaluate(() => localStorage.getItem("make1up.lookbook.v1"))).toBe("{broken");
+  expect(await page.evaluate(() => localStorage.getItem("make1up.lookbook.v2"))).toBe("{broken");
   await page.evaluate(() => {
-    localStorage.removeItem("make1up.lookbook.v1");
+    localStorage.removeItem("make1up.lookbook.v2");
     const write = Storage.prototype.setItem;
     Storage.prototype.setItem = function (key, value) {
-      if (key === "make1up.lookbook.v1") throw new DOMException("The quota was exceeded", "QuotaExceededError");
+      if (key === "make1up.lookbook.v2") throw new DOMException("The quota was exceeded", "QuotaExceededError");
       write.call(this, key, value);
     };
   });
@@ -555,7 +555,7 @@ test("a WebGL-disabled browser gives a support view and keeps the asset credit r
 });
 
 test("an unavailable portrait has a readable recovery view rather than a blank canvas", async ({ page }) => {
-  await page.route("**/face/v1/head.glb", (route) => route.abort());
+  await page.route("**/face/v2/head.glb", (route) => route.abort());
   await page.goto("./");
   await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "error", { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: "The portrait could not open.", exact: true })).toBeVisible();

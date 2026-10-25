@@ -1,6 +1,6 @@
 import { appendStroke, clearMakeup, defaultBrush, encodeLook, limits, newLook, withIdentity } from "./look";
 import type { Brush, Look, Result, Stroke, ThemeId } from "./look";
-import type { PortraitIdentity } from "./avatar";
+import type { AvatarIdentity } from "./avatar";
 import { assess } from "./paint";
 import type { Critique, PaintAnalysis } from "./paint";
 
@@ -35,7 +35,7 @@ export type Session = EditingSession
 export type Action =
   | Readonly<{ type: "start"; look: Look; mode: Mode }>
   | Readonly<{ type: "stroke"; stroke: Stroke }>
-  | Readonly<{ type: "identity"; identity: PortraitIdentity }>
+  | Readonly<{ type: "identity"; identity: AvatarIdentity }>
   | Readonly<{ type: "load"; look: Look }>
   | Readonly<{ type: "brush"; brush: Brush }>
   | Readonly<{ type: "navigate"; navigation: Navigation }>

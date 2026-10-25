@@ -1,9 +1,11 @@
 import "./style.css";
-import { brushFromInput, captureStroke, catalog, currentPaintPolicy, defaultBrush, encodeLook, identityFromInput, lookFingerprint, newLook, palette, regions, themes, toolRegion, tools } from "./look";
+import { brushFromInput, captureStroke, clearMakeup, defaultBrush, encodeLook, identityFromInput, lookFingerprint, newLook, palette, regions, themes, toolRegion, tools } from "./look";
+import { avatarCatalog, avatarFields, avatarLabels } from "./avatar";
+import type { AvatarChoice } from "./avatar";
 import type { Brush, Criterion, Look, ThemeId, ToolId, UV } from "./look";
 import { createSession, presentSession, step } from "./session";
 import type { Action, Framing, Mode, Navigation, Session } from "./session";
-import type { Portrait } from "./portrait";
+import type { AppearanceAvailability, Portrait } from "./portrait";
 import { decodeShare, encodeShare, lookbookKey, lookbookLimits, readLookbook, removeSavedLook, saveLook } from "./lookbook";
 import type { SavedLook, StoragePort } from "./lookbook";
 
@@ -84,7 +86,7 @@ app.innerHTML = `
           <div class="quick-brush"><div class="quick-tool"><strong id="quick-active-tool">Blush</strong><span id="allowed-region">Anywhere on the paintable face</span></div><label class="range-control quick-size" for="quick-brush-size"><span>Size</span><output id="quick-brush-size-value" data-brush-value="size" for="quick-brush-size">4.5%</output><input id="quick-brush-size" data-brush="size" aria-label="Quick brush size" type="range" min="0.003" max="0.08" step="0.001" value="0.045"></label></div>
           <div class="history-controls"><button id="undo-button" aria-label="Undo last edit" title="Undo · Ctrl Z">↶ <span>Undo</span></button><button id="redo-button" aria-label="Redo last edit" title="Redo · Ctrl Shift Z">↷ <span>Redo</span></button><button id="clear-button">Clear</button></div>
         </div>
-        <details class="appearance-section"><summary>Portrait styling <span aria-hidden="true">+</span></summary><p>One Rain portrait. Real iris maps, color tints, and fitted hair options. Tints keep the original skin texture and freckles.</p><div id="appearance-fields"></div><p class="appearance-note">This portrait has one sculpt and a neutral expression.</p></details>
+        <details class="appearance-section"><summary>Portrait styling <span aria-hidden="true">+</span></summary><p>Choose your portrait's shapes, complexion, iris color, and hair. Your makeup stays in place.</p><div id="appearance-fields"></div><p class="appearance-note">Each choice is one edit. Undo brings back the previous appearance.</p></details>
       </section>
       <section class="result-panel" id="result-panel" aria-label="Finished look" hidden><p class="eyebrow">THE FINAL LOOK</p><h2 id="result-heading" tabindex="-1">That's your<br><em>cover.</em></h2><div id="result-summary"></div><div id="result-evidence"></div><div class="result-actions"><button class="primary-button" id="next-button">Next brief ${arrow}</button><button class="outline-button" id="remix-button">Remix this look</button><button class="text-button" id="replay-button">Replay with clean skin</button></div></section>
       <div class="panel-colophon"><span class="mini-motif" aria-hidden="true">${motif}</span><p>A makeup playground.<br>A look only you could make.</p></div>
@@ -98,7 +100,7 @@ app.innerHTML = `
   <dialog id="remove-dialog" class="editorial-dialog small-dialog" aria-labelledby="remove-title"><div class="dialog-top"><span class="eyebrow">YOUR LOOKBOOK</span><button class="icon-button" data-close aria-label="Close removal confirmation">×</button></div><h2 id="remove-title">Remove this<br><em>saved look?</em></h2><p id="remove-description"></p><div class="dialog-actions"><button class="outline-button" data-close>Keep saved look</button><button class="primary-button" id="confirm-remove">Remove saved look</button></div></dialog>
   <dialog id="share-dialog" class="editorial-dialog small-dialog" aria-labelledby="share-title"><div class="dialog-top"><span class="eyebrow">PASS THE COLOR ON</span><button class="icon-button" data-close aria-label="Close share link">×</button></div><h2 id="share-title">Made to<br><em>be remixed.</em></h2><p>This private link contains your actual makeup and portrait styling. Anyone with it can open and remix the look. Nothing is uploaded.</p><label class="share-label" for="share-url">Private remix link</label><textarea id="share-url" readonly rows="3" spellcheck="false"></textarea><button class="primary-button wide-button" id="copy-link">Copy link ${arrow}</button><p class="small-copy">A complex look may be too large for a link. PNG download is always available.</p></dialog>
   <dialog id="help-dialog" class="editorial-dialog small-dialog" aria-labelledby="help-title"><div class="dialog-top"><span class="eyebrow">YOUR FIRST MARK</span><button class="icon-button" data-close aria-label="Close help">×</button></div><h2 id="help-title">A face is<br><em>your canvas.</em></h2><ol class="help-steps"><li><strong>Choose a tool and a color.</strong> Every tool works anywhere on the paintable face except lipstick, which stays on the lips.</li><li><strong>Paint the face.</strong> Drag with a mouse or a finger. Mirror paints both sides. Guided apply uses the portrait's landmarks.</li><li><strong>Find your angle.</strong> Turn rotates the portrait without painting. Use Face, Eyes, or Lips to get closer.</li><li><strong>Make it a cover.</strong> Finish locks your look. See your brief match, or finish practice without a score.</li></ol><p class="small-copy">Keyboard. Keys 1 to 7 choose tools. Ctrl Z or ⌘ Z undoes an edit. Add Shift to redo. Escape closes a dialog. All controls work with Tab and Enter.</p><button class="primary-button wide-button" data-close>Let's make a look ${arrow}</button></dialog>
-  <dialog id="credits-dialog" class="editorial-dialog small-dialog" aria-labelledby="credits-title"><div class="dialog-top"><span class="eyebrow">THE PEOPLE BEHIND THE PORTRAIT</span><button class="icon-button" data-close aria-label="Close credits">×</button></div><h2 id="credits-title">Made with<br><em>good company.</em></h2><h3>Rain portrait</h3><p>Rain Rig (CC) Blender Foundation | <a href="https://studio.blender.org/characters/rain/" target="_blank" rel="noopener noreferrer">studio.blender.org</a>.</p><p>This is a modified, licensed Rain derivative. It is not AI-generated. The export, material conversion, crop, fitted seam, brows, ponytail, catchlights, iris recolors, paint UVs, and masks were prepared for MAKE1UP. Blender Foundation does not endorse this project.</p><p>Licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">Creative Commons Attribution 4.0</a>. <a href="${import.meta.env.BASE_URL}face/CREDITS.txt" target="_blank" rel="noopener">Full portrait credit</a>.</p><h3>Local typefaces</h3><p>Bodoni Moda by indestructible type* and DM Sans by Colophon Foundry and contributors. Both use the SIL Open Font License. <a href="${import.meta.env.BASE_URL}fonts/Bodoni-Moda-OFL.txt" target="_blank" rel="noopener">Bodoni Moda license</a>. <a href="${import.meta.env.BASE_URL}fonts/DM-Sans-OFL.txt" target="_blank" rel="noopener">DM Sans license</a>.</p></dialog>
+  <dialog id="credits-dialog" class="editorial-dialog small-dialog" aria-labelledby="credits-title"><div class="dialog-top"><span class="eyebrow">THE PEOPLE BEHIND THE PORTRAIT</span><button class="icon-button" data-close aria-label="Close credits">×</button></div><h2 id="credits-title">Made with<br><em>good company.</em></h2><h3>Rain portrait</h3><p>Rain Rig (CC) Blender Foundation | <a href="https://studio.blender.org/characters/rain/" target="_blank" rel="noopener noreferrer">studio.blender.org</a>.</p><p>This is a modified, licensed Rain derivative. It is not AI-generated. The export, material conversion, crop, fitted seam, brows, ponytail, catchlights, iris recolors, paint UVs, and masks were prepared for MAKE1UP. Blender Foundation does not endorse this project.</p><p>Licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">Creative Commons Attribution 4.0</a>. <a href="${import.meta.env.BASE_URL}face/v2/CREDITS.txt" target="_blank" rel="noopener">Full portrait credit</a>.</p><h3>Local typefaces</h3><p>Bodoni Moda by indestructible type* and DM Sans by Colophon Foundry and contributors. Both use the SIL Open Font License. <a href="${import.meta.env.BASE_URL}fonts/Bodoni-Moda-OFL.txt" target="_blank" rel="noopener">Bodoni Moda license</a>. <a href="${import.meta.env.BASE_URL}fonts/DM-Sans-OFL.txt" target="_blank" rel="noopener">DM Sans license</a>.</p></dialog>
 `;
 
 function query<T extends Element = HTMLElement>(selector: string): T {
@@ -195,7 +197,7 @@ for (const dialog of document.querySelectorAll<HTMLDialogElement>("dialog")) {
 function applyPresentation(): void {
   if (portrait === null) return;
   const presentation = presentSession(session);
-  portrait.present(before ? { ...presentation, look: newLook(presentation.look.identity), readonly: true } : presentation);
+  portrait.present(before ? { ...presentation, look: clearMakeup(presentation.look), readonly: true } : presentation);
 }
 
 function dispatch(action: Action): void {
@@ -313,7 +315,7 @@ function render(): void {
   query("#result-panel").hidden = session.phase !== "result";
   query("#active-tool").textContent = tools[brush.tool].label;
   query("#tool-description").textContent = toolDescriptions[brush.tool];
-  const region = toolRegion(brush.tool, currentPaintPolicy);
+  const region = toolRegion(brush.tool);
   const regionHint = region === "valid" ? "Anywhere on the paintable face" : `${regions[region].label} only`;
   query("#quick-active-tool").textContent = tools[brush.tool].label;
   query("#allowed-region").textContent = regionHint;
@@ -435,13 +437,7 @@ function renderResult(): void {
   }
 }
 
-type AppearanceField = "eyes" | "complexion" | "hairColor" | "hairStyle";
-const appearanceDefinitions = [
-  { field: "eyes", label: "Iris color", entries: catalog.eyes },
-  { field: "complexion", label: "Complexion tint", entries: catalog.complexions },
-  { field: "hairColor", label: "Hair color tint", entries: catalog.hairColors },
-  { field: "hairStyle", label: "Fitted hair", entries: catalog.hairStyles },
-] as const;
+const appearanceDefinitions = avatarFields.map((field) => ({ field, label: avatarLabels[field], entries: avatarCatalog[field] }));
 
 function buildAppearance(): void {
   const container = query("#appearance-fields");
@@ -471,7 +467,7 @@ function renderAppearance(): void {
   }
 }
 
-function changeAppearance(field: AppearanceField, value: string): void {
+function changeAppearance(field: AvatarChoice, value: string): void {
   if (session.phase !== "editing") return;
   const parsed = identityFromInput({ ...session.history.current.identity, [field]: value });
   if (parsed.ok) dispatch({ type: "identity", identity: parsed.value });
@@ -542,7 +538,10 @@ query("#before-button").addEventListener("click", () => {
 query("#help-button").addEventListener("click", () => showDialog("#help-dialog"));
 query("#credits-button").addEventListener("click", () => showDialog("#credits-dialog"));
 query("#stage-credits").addEventListener("click", () => showDialog("#credits-dialog"));
-query("#retry-button").addEventListener("click", () => window.location.reload());
+query("#retry-button").addEventListener("click", () => {
+  if (portrait === null) window.location.reload();
+  else portrait.retryAppearance();
+});
 query("#dismiss-toast").addEventListener("click", () => { query("#toast").hidden = true; });
 
 query("#brief-button").addEventListener("click", () => {
@@ -590,7 +589,7 @@ function finishLook(): void {
 query("#finish-button").addEventListener("click", finishLook);
 query("#next-button").addEventListener("click", () => {
   selectedTheme = themeIds[(themeIds.indexOf(selectedTheme) + 1) % themeIds.length] ?? "orchid-hour";
-  startRound(newLook(currentLook().identity));
+  startRound(clearMakeup(currentLook()));
   canvas.focus({ preventScroll: true });
   query("#studio").scrollIntoView({ block: "start", behavior: "instant" });
 });
@@ -601,18 +600,20 @@ query("#remix-button").addEventListener("click", () => {
   announce("The look is yours to edit again.");
 });
 query("#replay-button").addEventListener("click", () => {
-  startRound(newLook(currentLook().identity));
+  startRound(clearMakeup(currentLook()));
   canvas.focus({ preventScroll: true });
   query("#studio").scrollIntoView({ block: "start", behavior: "instant" });
 });
 
 async function loadGuides(): Promise<void> {
   try {
-    const response = await fetch(`${import.meta.env.BASE_URL}face/v1/asset.json`);
+    const response = await fetch(`${import.meta.env.BASE_URL}face/v2/asset.json`);
     if (!response.ok) return;
     const metadata: unknown = await response.json();
-    if (typeof metadata !== "object" || metadata === null || !("id" in metadata) || metadata.id !== "rain-portrait-v1" || !("landmarks" in metadata)) return;
-    const landmarks = metadata.landmarks;
+    if (typeof metadata !== "object" || metadata === null || !("id" in metadata) || metadata.id !== "rain-portrait-v2" || !("paintAtlas" in metadata)) return;
+    const atlas = metadata.paintAtlas;
+    if (typeof atlas !== "object" || atlas === null || !("landmarks" in atlas)) return;
+    const landmarks = atlas.landmarks;
     if (typeof landmarks !== "object" || landmarks === null) return;
     const parsed = {} as Record<GuideKey, UV>;
     for (const key of guideKeys) {
@@ -649,7 +650,7 @@ query("#guided-button").addEventListener("click", () => {
 });
 
 function beginJob(name: string): number | null {
-  if (jobs.has(name)) return null;
+  if (jobs.has(name) || (name !== "copy" && portraitState !== "ready")) return null;
   const token = ++jobCounter;
   jobs.set(name, token);
   renderJobs();
@@ -920,10 +921,6 @@ function savedLookCard(entry: SavedLook, position: number): HTMLElement {
     if (!latest.ok) { announce(latest.error, true); return; }
     const saved = latest.value.find((item) => item.id === entry.id);
     if (saved === undefined) { renderLookbook(); announce("That saved look is no longer in this browser."); return; }
-    if (saved.look.asset !== "rain-portrait-v1") {
-      announce("This studio cannot display the new portrait yet. Your current look is unchanged.", true);
-      return;
-    }
     loadRequest++;
     if (session.phase === "editing") dispatch({ type: "load", look: saved.look });
     else startRound(saved.look);
@@ -963,10 +960,6 @@ async function loadSharedLook(): Promise<void> {
   if (token !== loadRequest) return;
   if (revision !== atRevision) { announce("You started editing while the share link opened. Your newer look was kept."); return; }
   if (!decoded.ok) { announce(decoded.error, true); return; }
-  if (decoded.value.asset !== "rain-portrait-v1") {
-    announce("This studio cannot display the new portrait yet. Your current look is unchanged.", true);
-    return;
-  }
   for (const dialog of document.querySelectorAll<HTMLDialogElement>("dialog[open]")) dialog.close();
   if (session.phase === "editing") dispatch({ type: "load", look: decoded.value });
   else startRound(decoded.value);
@@ -1000,6 +993,22 @@ window.addEventListener("pagehide", (event) => {
   portrait?.dispose();
 });
 
+function appearanceAvailability(state: AppearanceAvailability): void {
+  if (portrait === null) return;
+  portraitState = state.kind;
+  query("#portrait-stage").dataset.state = state.kind;
+  query("#stage-message").hidden = state.kind === "ready";
+  query("#retry-button").hidden = state.kind !== "error";
+  if (state.kind === "loading") {
+    query("#stage-message-title").textContent = "Updating your portrait.";
+    query("#stage-message-copy").textContent = "Your selected colors are loading. Painting resumes when they are ready.";
+  } else if (state.kind === "error") {
+    query("#stage-message-title").textContent = "Those colors could not load.";
+    query("#stage-message-copy").textContent = state.message;
+  }
+  render();
+}
+
 buildAppearance();
 refreshSavedCount();
 renderBriefRules(selectedTheme);
@@ -1010,6 +1019,7 @@ void import("./portrait").then(({ mountPortrait }) => mountPortrait(
   canvas,
   (stroke) => dispatch({ type: "stroke", stroke }),
   (message) => { dispatch({ type: "inputRejected", message }); announce(message, true); },
+  appearanceAvailability,
 )).then((mounted) => {
   portrait = mounted;
   portraitState = "ready";

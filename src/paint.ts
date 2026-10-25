@@ -145,7 +145,7 @@ function drawTip(
 ): void {
   const { size } = masks;
   const tool = tools[stroke.brush.tool];
-  const hardRegion = toolRegion(stroke.brush.tool, stroke.policy);
+  const hardRegion = toolRegion(stroke.brush.tool);
   const radius = stroke.brush.radius * size;
   const centerX = u * size;
   const centerY = v * size;
@@ -245,40 +245,6 @@ function writePixel(
   field.finish[index] = Math.round(finishPremultiplied / alpha);
 }
 
-function blendPixel(field: PaintField, source: PaintField, index: number, strength: number, radius: number): void {
-  const x = index % field.size;
-  const y = Math.floor(index / field.size);
-  let alpha = 0;
-  let red = 0;
-  let green = 0;
-  let blue = 0;
-  let finish = 0;
-  for (let row = -1; row <= 1; row += 1) {
-    for (let column = -1; column <= 1; column += 1) {
-      const sampleX = x + column * radius;
-      const sampleY = y + row * radius;
-      if (sampleX < 0 || sampleX >= field.size || sampleY < 0 || sampleY >= field.size) continue;
-      const weight = (row === 0 ? 2 : 1) * (column === 0 ? 2 : 1) / 16;
-      const sample = sampleY * field.size + sampleX;
-      const offset = sample * 4;
-      const mass = (source.rgba[offset + 3] ?? 0) / 255 * weight;
-      alpha += mass;
-      red += (source.rgba[offset] ?? 0) * mass;
-      green += (source.rgba[offset + 1] ?? 0) * mass;
-      blue += (source.rgba[offset + 2] ?? 0) * mass;
-      finish += (source.finish[sample] ?? 0) * mass;
-    }
-  }
-  const offset = index * 4;
-  const remaining = (source.rgba[offset + 3] ?? 0) / 255 * (1 - strength);
-  writePixel(field, index,
-    alpha * strength + remaining,
-    red * strength + (source.rgba[offset] ?? 0) * remaining,
-    green * strength + (source.rgba[offset + 1] ?? 0) * remaining,
-    blue * strength + (source.rgba[offset + 2] ?? 0) * remaining,
-    finish * strength + (source.finish[index] ?? 0) * remaining);
-}
-
 function pixelDiffers(field: PaintField, source: PaintField, index: number): boolean {
   const offset = index * 4;
   return field.rgba[offset] !== source.rgba[offset]
@@ -298,7 +264,6 @@ function composite(
 ): void {
   const operation = tools[stroke.brush.tool].operation;
   const [red, green, blue] = colorBytes(stroke.brush.color);
-  const blurRadius = Math.max(1, Math.min(8, Math.round(stroke.brush.radius * field.size * 0.18)));
   for (let y = bounds.top; y <= bounds.bottom; y += 1) {
     for (let x = bounds.left; x <= bounds.right; x += 1) {
       const index = y * field.size + x;
@@ -311,24 +276,20 @@ function composite(
       const beforeAlpha = field.rgba[offset + 3];
       const beforeFinish = field.finish[index];
       const differentBefore = effect !== undefined && pixelDiffers(field, source, index);
-      if (operation === "blend") {
-        blendPixel(field, source, index, strength, blurRadius);
+      const oldAlpha = (source.rgba[offset + 3] ?? 0) / 255;
+      const remaining = oldAlpha * (1 - strength);
+      if (operation === "erase") {
+        writePixel(field, index, remaining,
+          (source.rgba[offset] ?? 0) * remaining,
+          (source.rgba[offset + 1] ?? 0) * remaining,
+          (source.rgba[offset + 2] ?? 0) * remaining,
+          (source.finish[index] ?? 0) * remaining);
       } else {
-        const oldAlpha = (source.rgba[offset + 3] ?? 0) / 255;
-        const remaining = oldAlpha * (1 - strength);
-        if (operation === "erase") {
-          writePixel(field, index, remaining,
-            (source.rgba[offset] ?? 0) * remaining,
-            (source.rgba[offset + 1] ?? 0) * remaining,
-            (source.rgba[offset + 2] ?? 0) * remaining,
-            (source.finish[index] ?? 0) * remaining);
-        } else {
-          writePixel(field, index, strength + remaining,
-            red * strength + (source.rgba[offset] ?? 0) * remaining,
-            green * strength + (source.rgba[offset + 1] ?? 0) * remaining,
-            blue * strength + (source.rgba[offset + 2] ?? 0) * remaining,
-            stroke.brush.finish * 255 * strength + (source.finish[index] ?? 0) * remaining);
-        }
+        writePixel(field, index, strength + remaining,
+          red * strength + (source.rgba[offset] ?? 0) * remaining,
+          green * strength + (source.rgba[offset + 1] ?? 0) * remaining,
+          blue * strength + (source.rgba[offset + 2] ?? 0) * remaining,
+          stroke.brush.finish * 255 * strength + (source.finish[index] ?? 0) * remaining);
       }
       if (effect !== undefined && (beforeRed !== field.rgba[offset]
         || beforeGreen !== field.rgba[offset + 1] || beforeBlue !== field.rgba[offset + 2]
@@ -476,7 +437,7 @@ function softenStroke(field: PaintField, source: PaintField, stroke: Stroke, mas
 function extendsStroke(previous: Stroke, next: Stroke): boolean {
   const a = previous.brush;
   const b = next.brush;
-  return previous.id === next.id && previous.policy === next.policy && previous.algorithm === next.algorithm && a.tool === b.tool && a.color === b.color
+  return previous.id === next.id && previous.algorithm === next.algorithm && a.tool === b.tool && a.color === b.color
     && a.radius === b.radius && a.opacity === b.opacity && a.softness === b.softness && a.finish === b.finish
     && previous.paths.length <= next.paths.length
     && previous.paths.every((path, index) => {
@@ -549,8 +510,7 @@ export function composePaint(strokes: readonly Stroke[], masks: PaintMasks): Pai
       continue;
     }
     const { pixels, bounds } = strokeCoverage(stroke, masks);
-    const source = tools[stroke.brush.tool].operation === "blend" ? copyField(field) : field;
-    composite(field, source, stroke, pixels, bounds);
+    composite(field, field, stroke, pixels, bounds);
   }
   return field;
 }
