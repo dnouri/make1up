@@ -1,7 +1,7 @@
 import { decodeLookJSON, encodeLook, limits, lookFingerprint } from "./look";
 import type { Look, Result } from "./look";
 
-export const lookbookKey = "make1up.lookbook.v1";
+export const lookbookKey = "make1up.lookbook.v2";
 export const lookbookLimits = Object.freeze({
   entries: 8,
   storageBytes: 2_000_000,

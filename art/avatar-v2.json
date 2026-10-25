@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "asset": "rain-portrait-v2",
+  "paintAtlas": "rain-front-v1",
+  "source": {
+    "blend": "tmp/asset-research/assets/Rain v3.3/rain_v3.2.blend",
+    "archive": "tmp/asset-research/assets/rain-v33.zip",
+    "archiveSha256": "80217f163f6392dc829233d63c2cfb5e1376775bc34101ad14f39631fea70d24",
+    "neutral": "art/neutral/head.glb",
+    "license": "CC-BY-4.0",
+    "credit": "Rain Rig (CC) Blender Foundation | studio.blender.org"
+  },
+  "defaults": {
+    "face": "balanced",
+    "nose": "balanced",
+    "mouth": "balanced",
+    "eyeShape": "balanced",
+    "complexion": "warm",
+    "eyes": "blue",
+    "hairColor": "espresso",
+    "hairStyle": "ponytail"
+  },
+  "choices": {
+    "face": {
+      "balanced": {"label": "Balanced", "morphs": {}},
+      "soft": {"label": "Soft", "morphs": {"face-soft": 1}},
+      "angular": {"label": "Angular", "morphs": {"face-angular": 1}}
+    },
+    "nose": {
+      "balanced": {"label": "Balanced", "morphs": {}},
+      "broad": {"label": "Broad", "morphs": {"nose-broad": 1}},
+      "rounded": {"label": "Rounded tip", "morphs": {"nose-rounded": 1}}
+    },
+    "mouth": {
+      "balanced": {"label": "Balanced", "morphs": {}},
+      "full": {"label": "Full", "morphs": {"mouth-full": 1}},
+      "wide": {"label": "Wide", "morphs": {"mouth-wide": 1}}
+    },
+    "eyeShape": {
+      "balanced": {"label": "Balanced", "morphs": {}},
+      "round": {"label": "Round", "morphs": {"eyes-round": 1}}
+    },
+    "complexion": {
+      "fair": {"label": "Fair", "faceMap": "maps/skin-fair.png", "bustMap": "maps/bust-fair.png", "recipe": {"skinLinear": [0.56, 0.365, 0.28], "lipLinear": [0.40, 0.16, 0.145]}},
+      "warm": {"label": "Warm", "faceMap": "maps/skin-warm.png", "bustMap": "maps/bust-warm.png", "recipe": {"copySource": true}},
+      "tan": {"label": "Tan", "faceMap": "maps/skin-tan.png", "bustMap": "maps/bust-tan.png", "recipe": {"skinLinear": [0.21, 0.105, 0.050], "lipLinear": [0.17, 0.059, 0.047]}},
+      "brown": {"label": "Brown", "faceMap": "maps/skin-brown.png", "bustMap": "maps/bust-brown.png", "recipe": {"skinLinear": [0.135, 0.061, 0.033], "lipLinear": [0.12, 0.033, 0.030]}},
+      "deep": {"label": "Deep", "faceMap": "maps/skin-deep.png", "bustMap": "maps/bust-deep.png", "recipe": {"skinLinear": [0.058, 0.025, 0.017], "lipLinear": [0.062, 0.019, 0.019]}}
+    },
+    "eyes": {
+      "blue": {"label": "Blue", "map": "maps/eyes-blue.png", "source": "art/neutral/eyes-blue.png"},
+      "hazel": {"label": "Hazel", "map": "maps/eyes-hazel.png", "source": "art/neutral/eyes-hazel.png"},
+      "olive": {"label": "Olive", "map": "maps/eyes-olive.png", "source": "art/neutral/eyes-olive.png"}
+    },
+    "hairColor": {
+      "espresso": {"label": "Espresso", "map": "maps/hair-espresso.png", "browLinear": [0.023, 0.012, 0.009], "recipe": {"copySource": true}},
+      "chestnut": {"label": "Chestnut", "map": "maps/hair-chestnut.png", "browLinear": [0.060, 0.024, 0.012], "recipe": {"shadowLinear": [0.015, 0.005, 0.003], "lightLinear": [0.12, 0.043, 0.018], "gamma": 0.8}},
+      "plum": {"label": "Plum", "map": "maps/hair-plum.png", "browLinear": [0.045, 0.013, 0.033], "recipe": {"shadowLinear": [0.010, 0.002, 0.011], "lightLinear": [0.09, 0.021, 0.075], "gamma": 0.85}},
+      "blonde": {"label": "Light blonde", "map": "maps/hair-blonde.png", "browLinear": [0.13, 0.075, 0.035], "recipe": {"shadowLinear": [0.065, 0.030, 0.009], "lightLinear": [0.68, 0.49, 0.23], "gamma": 0.75}}
+    },
+    "hairStyle": {
+      "ponytail": {"label": "Ponytail", "components": ["Hair", "HairSweep", "HairTail", "HairTie"]},
+      "bun": {"label": "Crown bun", "components": ["Hair", "HairSweep", "HairBun", "BunBand"]}
+    }
+  },
+  "authoring": {
+    "units": "meters",
+    "axes": "+Y up, +Z front",
+    "constraints": {
+      "neckYMax": 0.145,
+      "hairlineYMin": 0.35,
+      "earAbsXMin": 0.105,
+      "rearZMax": 0.025,
+      "maxCombinedDisplacement": 0.011,
+      "minTriangleAreaRatio": 0.20,
+      "minTriangleNormalDot": 0.65
+    },
+    "targets": {
+      "face-soft": {
+        "method": "symmetricFields",
+        "meshes": ["Face"],
+        "fields": [
+          {"center": [0.077, 0.242, 0.080], "radius": [0.048, 0.057, 0.090], "shift": [0.0055, 0.0005, 0.0015]},
+          {"center": [0.053, 0.187, 0.090], "radius": [0.057, 0.037, 0.085], "shift": [0.0030, 0.0013, 0.0010]}
+        ]
+      },
+      "face-angular": {
+        "method": "symmetricFields",
+        "meshes": ["Face"],
+        "fields": [
+          {"center": [0.074, 0.193, 0.065], "radius": [0.042, 0.040, 0.080], "shift": [0.0065, -0.0015, -0.0008]},
+          {"center": [0.068, 0.242, 0.105], "radius": [0.041, 0.042, 0.070], "shift": [-0.0030, 0, -0.0010]},
+          {"center": [0.012, 0.171, 0.105], "radius": [0.040, 0.031, 0.065], "shift": [-0.0010, -0.0030, 0.0010]}
+        ]
+      },
+      "nose-broad": {
+        "method": "symmetricFields",
+        "meshes": ["Face"],
+        "fields": [
+          {"center": [0.017, 0.252, 0.143], "radius": [0.025, 0.026, 0.046], "shift": [0.0042, 0, 0.0005]},
+          {"center": [0.009, 0.280, 0.137], "radius": [0.018, 0.032, 0.037], "shift": [0.0014, 0, 0]}
+        ]
+      },
+      "nose-rounded": {
+        "method": "symmetricFields",
+        "meshes": ["Face"],
+        "fields": [
+          {"center": [0.008, 0.254, 0.160], "radius": [0.025, 0.025, 0.039], "shift": [0.0015, -0.0012, 0.0035]}
+        ]
+      },
+      "mouth-full": {
+        "method": "sourceKeys",
+        "meshes": ["Face"],
+        "keys": {"LipsPuff_Upper": 0.60, "LipsPuff_Lower": 0.60},
+        "supportCenter": [0, 0.211, 0.134],
+        "supportRadius": [0.065, 0.044, 0.070]
+      },
+      "mouth-wide": {
+        "method": "symmetricFields",
+        "meshes": ["Face"],
+        "fields": [
+          {"center": [0.027, 0.209, 0.143], "radius": [0.038, 0.028, 0.047], "shift": [0.0045, 0, 0]}
+        ]
+      },
+      "eyes-round": {
+        "method": "eyeAperture",
+        "meshes": ["Face", "Lashes"],
+        "eyeCenter": [0.046634, 0.293253, 0.088727],
+        "supportCenter": [0.046634, 0.298, 0.122],
+        "supportRadius": [0.039, 0.029, 0.044],
+        "apertureMeters": 0.0033,
+        "transitionMeters": 0.006
+      }
+    },
+    "skin": {
+      "sourceFace": "art/neutral/skin-base.png",
+      "sourceBust": "art/neutral/bust-base.png",
+      "referenceLinear": [0.246, 0.148, 0.079],
+      "detailRatioPower": 0.95,
+      "localChromaStrength": 0.65,
+      "lipUvCenter": [0.5, 0.375],
+      "lipUvRadius": [0.062, 0.047]
+    },
+    "hair": {
+      "source": "art/neutral/hair-espresso.png",
+      "luminancePercentiles": [2, 98],
+      "bun": {
+        "center": [0, 0.459, -0.031],
+        "radius": [0.055, 0.052, 0.048],
+        "segments": 128,
+        "rings": 64,
+        "ridgeCount": 11,
+        "ridgeDepth": 0.0023,
+        "centerDimple": 0.0045,
+        "uvMin": [0.35, 0.08],
+        "uvMax": [0.73, 0.25],
+        "bandCenter": [0, 0.437, -0.030],
+        "bandRadius": 0.038,
+        "bandTubeRadius": 0.0033
+      }
+    }
+  }
+}

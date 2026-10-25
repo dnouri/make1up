@@ -1,9 +1,11 @@
 import "./style.css";
-import { brushFromInput, captureStroke, catalog, defaultBrush, encodeLook, identityFromInput, lookFingerprint, newLook, palette, regions, themes, tools } from "./look";
+import { brushFromInput, captureStroke, clearMakeup, defaultBrush, encodeLook, identityFromInput, lookFingerprint, newLook, palette, regions, themes, toolRegion, tools } from "./look";
+import { avatarCatalog, avatarFields, avatarLabels } from "./avatar";
+import type { AvatarChoice } from "./avatar";
 import type { Brush, Criterion, Look, ThemeId, ToolId, UV } from "./look";
 import { createSession, presentSession, step } from "./session";
 import type { Action, Framing, Mode, Navigation, Session } from "./session";
-import type { Portrait } from "./portrait";
+import type { AppearanceAvailability, Portrait } from "./portrait";
 import { decodeShare, encodeShare, lookbookKey, lookbookLimits, readLookbook, removeSavedLook, saveLook } from "./lookbook";
 import type { SavedLook, StoragePort } from "./lookbook";
 
@@ -37,7 +39,8 @@ app.innerHTML = `
       </div>
     </div>
   </header>
-  <main class="studio-shell" id="studio">
+  <main class="studio-shell" id="studio" data-workspace="makeup">
+    <header class="customization-header" id="customization-header" hidden><h2 id="customization-heading" tabindex="-1">Customize portrait</h2><p id="customization-clock">No timer</p></header>
     <aside class="tool-rail" aria-label="Makeup tools">
       <h2 class="eyebrow rail-heading">01 <span>/</span> TOOLS</h2>
       <div class="tool-list">${toolIds.map((id, index) => `<button class="tool-button" data-tool="${id}" aria-label="${tools[id].label}" aria-pressed="false" title="${tools[id].label} · ${index + 1}"><span class="tool-icon"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true">${icons[id]}</svg></span><span>${tools[id].label}</span><kbd>${index + 1}</kbd></button>`).join("")}</div>
@@ -45,8 +48,9 @@ app.innerHTML = `
     </aside>
     <section class="work-area" aria-label="Portrait studio">
       <div class="brief-bar">
-        <div class="brief-copy"><p class="eyebrow" id="mode-label">THE BRIEF / SOLO CHALLENGE</p><h2 id="theme-title">Orchid hour</h2><p id="theme-brief">${themes["orchid-hour"].brief}</p></div>
-        <button class="change-brief" id="brief-button">Change<br>brief ${arrow}</button>
+        <p class="eyebrow" id="mode-label">THE BRIEF / SOLO CHALLENGE</p>
+        <div class="brief-actions"><h2><button class="change-brief" id="brief-button" aria-label="Change brief"><span id="theme-title">Orchid hour</span><span class="brief-change-label">Change brief ${arrow}</span></button></h2><button class="outline-button" id="customize-button">Customize portrait</button></div>
+        <p id="theme-brief">${themes["orchid-hour"].brief}</p>
       </div>
       <div class="stage" id="portrait-stage" data-state="loading">
         <div class="cover-type" aria-hidden="true"><span class="cover-kicker">THE COLOR ISSUE</span><span class="cover-title" id="cover-title">Orchid<br><em>hour.</em></span></div>
@@ -63,6 +67,7 @@ app.innerHTML = `
         <button class="stage-credit" id="stage-credits" aria-label="Portrait asset credit">Portrait credit <span aria-hidden="true">↗</span></button>
       </div>
       <div class="view-bar">
+        <p class="inspection-hint" id="inspection-hint" hidden>Drag to turn</p>
         <div class="framing-controls" aria-label="Portrait framing"><button data-frame="face" aria-pressed="true">Face</button><button data-frame="eyes" aria-pressed="false">Eyes</button><button data-frame="lips" aria-pressed="false">Lips</button></div>
         <div class="view-actions"><button class="before-button" id="before-button" aria-pressed="false">Before / after</button><span class="view-divider"></span><button class="icon-button" id="zoom-out" aria-label="Zoom out">−</button><button class="icon-button" id="zoom-in" aria-label="Zoom in">+</button></div>
       </div>
@@ -71,7 +76,7 @@ app.innerHTML = `
     </section>
     <aside class="cosmetics-panel" aria-label="Cosmetics and brush settings">
       <section id="editor-panel">
-        <div class="panel-title"><p class="eyebrow">02 / THE PALETTE</p><h2 id="active-tool">Blush</h2><p class="tool-description" id="tool-description">A soft wash of color for the cheeks.</p></div>
+        <div class="panel-title"><p class="eyebrow">02 / THE PALETTE</p><h2 id="active-tool">Blush</h2><p class="tool-description" id="tool-description">A soft wash of color anywhere on the paintable face.</p></div>
         <fieldset class="color-section"><legend>COLOR STORY</legend><div class="swatch-list">${Object.values(palette).map((entry) => `<button class="swatch" data-color="${entry.color}" aria-label="${entry.label} color" aria-pressed="false" title="${entry.label}" style="--swatch:${entry.color}"><span></span></button>`).join("")}</div><div class="custom-color-row"><span id="color-name">Rose</span><label class="custom-color">Custom color <input type="color" id="custom-color" aria-label="Custom makeup color" value="#cc5075"><span class="custom-color-icon" aria-hidden="true">+</span></label></div></fieldset>
         <fieldset class="brush-section"><legend>THE FINER DETAILS</legend>
           <label class="range-control" for="brush-size"><span>Brush size</span><output id="brush-size-value" data-brush-value="size" for="brush-size">4.5%</output><input id="brush-size" data-brush="size" aria-label="Brush size" type="range" min="0.003" max="0.08" step="0.001" value="0.045"></label>
@@ -81,14 +86,15 @@ app.innerHTML = `
         </fieldset>
         <div class="guided-section" id="guided-section" hidden><button class="guided-button" id="guided-button">Guided apply ${arrow}</button><p id="guided-description">A little help with placement.</p></div>
         <div class="correction-bar" id="correction-bar" aria-label="Brush and correction">
-          <div class="quick-brush"><div class="quick-tool"><strong id="quick-active-tool">Blush</strong><span id="allowed-region">Cheeks only</span></div><label class="range-control quick-size" for="quick-brush-size"><span>Size</span><output id="quick-brush-size-value" data-brush-value="size" for="quick-brush-size">4.5%</output><input id="quick-brush-size" data-brush="size" aria-label="Quick brush size" type="range" min="0.003" max="0.08" step="0.001" value="0.045"></label></div>
+          <div class="quick-brush"><div class="quick-tool"><strong id="quick-active-tool">Blush</strong><span id="allowed-region">Anywhere on the paintable face</span></div><label class="range-control quick-size" for="quick-brush-size"><span>Size</span><output id="quick-brush-size-value" data-brush-value="size" for="quick-brush-size">4.5%</output><input id="quick-brush-size" data-brush="size" aria-label="Quick brush size" type="range" min="0.003" max="0.08" step="0.001" value="0.045"></label></div>
           <div class="history-controls"><button id="undo-button" aria-label="Undo last edit" title="Undo · Ctrl Z">↶ <span>Undo</span></button><button id="redo-button" aria-label="Redo last edit" title="Redo · Ctrl Shift Z">↷ <span>Redo</span></button><button id="clear-button">Clear</button></div>
         </div>
-        <details class="appearance-section"><summary>Portrait styling <span aria-hidden="true">+</span></summary><p>One Rain portrait. Real iris maps, color tints, and fitted hair options. Tints keep the original skin texture and freckles.</p><div id="appearance-fields"></div><p class="appearance-note">This portrait has one sculpt and a neutral expression.</p></details>
       </section>
       <section class="result-panel" id="result-panel" aria-label="Finished look" hidden><p class="eyebrow">THE FINAL LOOK</p><h2 id="result-heading" tabindex="-1">That's your<br><em>cover.</em></h2><div id="result-summary"></div><div id="result-evidence"></div><div class="result-actions"><button class="primary-button" id="next-button">Next brief ${arrow}</button><button class="outline-button" id="remix-button">Remix this look</button><button class="text-button" id="replay-button">Replay with clean skin</button></div></section>
       <div class="panel-colophon"><span class="mini-motif" aria-hidden="true">${motif}</span><p>A makeup playground.<br>A look only you could make.</p></div>
     </aside>
+    <aside class="customization-controls" id="customization-controls" aria-label="Portrait appearance" hidden><p class="appearance-intro">Your makeup stays in place. Each choice is one edit.</p><p class="appearance-status" id="appearance-status" role="status" aria-live="polite">Portrait ready.</p><p class="customization-notice" id="customization-notice" role="status" hidden></p><div id="appearance-fields"></div></aside>
+    <footer class="customization-footer" id="customization-footer" hidden><div class="customization-history"><button id="customization-undo" aria-label="Undo last edit">↶ <span>Undo</span></button><button id="customization-redo" aria-label="Redo last edit">↷ <span>Redo</span></button></div><p>Changes apply as you choose.</p><button class="primary-button" id="customization-done">Done</button></footer>
   </main>
   <footer class="site-footer"><span>MAKE1UP © 2026</span><span>MAKEUP IS AN EXPERIMENT. NOT A BEAUTY SCORE.</span><button class="text-button credit-button" id="credits-button">Portrait & font credits <span aria-hidden="true">↗</span></button></footer>
   <div class="toast" id="toast" hidden><p role="status" aria-live="polite" aria-atomic="true" id="app-status"></p><button class="icon-button" id="dismiss-toast" aria-label="Dismiss message">×</button></div>
@@ -97,8 +103,8 @@ app.innerHTML = `
   <dialog id="lookbook-dialog" class="editorial-dialog lookbook-dialog" aria-labelledby="lookbook-title"><div class="dialog-top"><span class="eyebrow">SAVED IN THIS BROWSER</span><button class="icon-button" data-close aria-label="Close lookbook">×</button></div><h2 id="lookbook-title">Your <em>lookbook.</em></h2><p class="dialog-intro">Up to eight looks, saved on this device. Open a look to keep painting.</p><div id="lookbook-content"></div></dialog>
   <dialog id="remove-dialog" class="editorial-dialog small-dialog" aria-labelledby="remove-title"><div class="dialog-top"><span class="eyebrow">YOUR LOOKBOOK</span><button class="icon-button" data-close aria-label="Close removal confirmation">×</button></div><h2 id="remove-title">Remove this<br><em>saved look?</em></h2><p id="remove-description"></p><div class="dialog-actions"><button class="outline-button" data-close>Keep saved look</button><button class="primary-button" id="confirm-remove">Remove saved look</button></div></dialog>
   <dialog id="share-dialog" class="editorial-dialog small-dialog" aria-labelledby="share-title"><div class="dialog-top"><span class="eyebrow">PASS THE COLOR ON</span><button class="icon-button" data-close aria-label="Close share link">×</button></div><h2 id="share-title">Made to<br><em>be remixed.</em></h2><p>This private link contains your actual makeup and portrait styling. Anyone with it can open and remix the look. Nothing is uploaded.</p><label class="share-label" for="share-url">Private remix link</label><textarea id="share-url" readonly rows="3" spellcheck="false"></textarea><button class="primary-button wide-button" id="copy-link">Copy link ${arrow}</button><p class="small-copy">A complex look may be too large for a link. PNG download is always available.</p></dialog>
-  <dialog id="help-dialog" class="editorial-dialog small-dialog" aria-labelledby="help-title"><div class="dialog-top"><span class="eyebrow">YOUR FIRST MARK</span><button class="icon-button" data-close aria-label="Close help">×</button></div><h2 id="help-title">A face is<br><em>your canvas.</em></h2><ol class="help-steps"><li><strong>Choose a tool and a color.</strong> Blush stays on cheeks. Eyeshadow stays on lids. Lipstick stays on lips. Liner supports free painting anywhere on the visible face.</li><li><strong>Paint the face.</strong> Drag with a mouse or a finger. Mirror paints both sides. Guided apply uses the portrait's landmarks.</li><li><strong>Find your angle.</strong> Turn rotates the portrait without painting. Use Face, Eyes, or Lips to get closer.</li><li><strong>Make it a cover.</strong> Finish locks your look. See your brief match, or finish practice without a score.</li></ol><p class="small-copy">Keyboard. Keys 1 to 7 choose tools. Ctrl Z or ⌘ Z undoes an edit. Add Shift to redo. Escape closes a dialog. All controls work with Tab and Enter.</p><button class="primary-button wide-button" data-close>Let's make a look ${arrow}</button></dialog>
-  <dialog id="credits-dialog" class="editorial-dialog small-dialog" aria-labelledby="credits-title"><div class="dialog-top"><span class="eyebrow">THE PEOPLE BEHIND THE PORTRAIT</span><button class="icon-button" data-close aria-label="Close credits">×</button></div><h2 id="credits-title">Made with<br><em>good company.</em></h2><h3>Rain portrait</h3><p>Rain Rig (CC) Blender Foundation | <a href="https://studio.blender.org/characters/rain/" target="_blank" rel="noopener noreferrer">studio.blender.org</a>.</p><p>This is a modified, licensed Rain derivative. It is not AI-generated. The export, material conversion, crop, fitted seam, brows, ponytail, catchlights, iris recolors, paint UVs, and masks were prepared for MAKE1UP. Blender Foundation does not endorse this project.</p><p>Licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">Creative Commons Attribution 4.0</a>. <a href="${import.meta.env.BASE_URL}face/CREDITS.txt" target="_blank" rel="noopener">Full portrait credit</a>.</p><h3>Local typefaces</h3><p>Bodoni Moda by indestructible type* and DM Sans by Colophon Foundry and contributors. Both use the SIL Open Font License. <a href="${import.meta.env.BASE_URL}fonts/Bodoni-Moda-OFL.txt" target="_blank" rel="noopener">Bodoni Moda license</a>. <a href="${import.meta.env.BASE_URL}fonts/DM-Sans-OFL.txt" target="_blank" rel="noopener">DM Sans license</a>.</p></dialog>
+  <dialog id="help-dialog" class="editorial-dialog small-dialog" aria-labelledby="help-title"><div class="dialog-top"><span class="eyebrow">YOUR FIRST MARK</span><button class="icon-button" data-close aria-label="Close help">×</button></div><h2 id="help-title">A face is<br><em>your canvas.</em></h2><ol class="help-steps"><li><strong>Choose a tool and a color.</strong> Every tool works anywhere on the paintable face except lipstick, which stays on the lips.</li><li><strong>Paint the face.</strong> Drag with a mouse or a finger. Mirror paints both sides. Guided apply uses the portrait's landmarks.</li><li><strong>Find your angle.</strong> Turn rotates the portrait without painting. Use Face, Eyes, or Lips to get closer.</li><li><strong>Make it a cover.</strong> Finish locks your look. See your brief match, or finish practice without a score.</li></ol><p class="small-copy">Keyboard. Keys 1 to 7 choose tools. Ctrl Z or ⌘ Z undoes an edit. Add Shift to redo. Escape closes a dialog. All controls work with Tab and Enter.</p><button class="primary-button wide-button" data-close>Let's make a look ${arrow}</button></dialog>
+  <dialog id="credits-dialog" class="editorial-dialog small-dialog" aria-labelledby="credits-title"><div class="dialog-top"><span class="eyebrow">THE PEOPLE BEHIND THE PORTRAIT</span><button class="icon-button" data-close aria-label="Close credits">×</button></div><h2 id="credits-title">Made with<br><em>good company.</em></h2><h3>Rain portrait</h3><p>Rain Rig (CC) Blender Foundation | <a href="https://studio.blender.org/characters/rain/" target="_blank" rel="noopener noreferrer">studio.blender.org</a>.</p><p>This is a modified, licensed Rain derivative. It is not AI-generated. The export, material conversion, crop, fitted seam, brows, ponytail, catchlights, iris recolors, paint UVs, and masks were prepared for MAKE1UP. Blender Foundation does not endorse this project.</p><p>Licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">Creative Commons Attribution 4.0</a>. <a href="${import.meta.env.BASE_URL}face/v2/CREDITS.txt" target="_blank" rel="noopener">Full portrait credit</a>.</p><h3>Local typefaces</h3><p>Bodoni Moda by indestructible type* and DM Sans by Colophon Foundry and contributors. Both use the SIL Open Font License. <a href="${import.meta.env.BASE_URL}fonts/Bodoni-Moda-OFL.txt" target="_blank" rel="noopener">Bodoni Moda license</a>. <a href="${import.meta.env.BASE_URL}fonts/DM-Sans-OFL.txt" target="_blank" rel="noopener">DM Sans license</a>.</p></dialog>
 `;
 
 function query<T extends Element = HTMLElement>(selector: string): T {
@@ -126,6 +132,7 @@ let portraitState: "loading" | "ready" | "error" = "loading";
 let round = 1;
 let revision = 0;
 let before = false;
+let makeupScroll: Readonly<{ x: number; y: number }> | null = null;
 let timer: number | undefined;
 let revealTimer: number | undefined;
 let toastTimer: number | undefined;
@@ -138,8 +145,8 @@ const jobs = new Map<string, number>();
 const dialogOpeners = new Map<HTMLDialogElement, HTMLElement | null>();
 
 const toolDescriptions: Record<ToolId, string> = {
-  blush: "A soft wash of color for the cheeks.",
-  shadow: "Color for the upper lids. Take it softly or build it up.",
+  blush: "A soft wash of color anywhere on the paintable face.",
+  shadow: "Color anywhere on the paintable face. Take it softly or build it up.",
   lipstick: "A defined lip, from a soft tint to full gloss.",
   liner: "Free painting anywhere on the visible face, with a precise brush.",
   sparkle: "A five-point stamp. One touch, a little light.",
@@ -152,12 +159,6 @@ type Guides = Readonly<Record<GuideKey, UV>>;
 const guideKeys: readonly GuideKey[] = ["lipsCenter", "lipsLeftCorner", "lipsRightCorner", "cheekLeft", "cheekRight", "upperLidLeft", "upperLidRight"];
 let guides: Guides | null = null;
 
-const inspectedAppearance = {
-  complexions: ["source", "rose", "golden", "deep"],
-  hairColors: ["espresso", "chestnut", "plum"],
-  hairStyles: ["ponytail", "tucked", "short"],
-} as const;
-
 function readSession(): Session {
   return session;
 }
@@ -169,6 +170,12 @@ function currentLook(): Look {
 function announce(message: string, persistent = false): void {
   window.clearTimeout(toastTimer);
   query("#app-status").textContent = message;
+  if (session.phase === "editing" && session.workspace === "customize") {
+    query("#customization-notice").textContent = message;
+    query("#customization-notice").hidden = false;
+    query("#toast").hidden = true;
+    return;
+  }
   query("#toast").hidden = false;
   if (!persistent) toastTimer = window.setTimeout(() => { query("#toast").hidden = true; }, 6500);
 }
@@ -201,18 +208,32 @@ for (const dialog of document.querySelectorAll<HTMLDialogElement>("dialog")) {
 function applyPresentation(): void {
   if (portrait === null) return;
   const presentation = presentSession(session);
-  portrait.present(before ? { ...presentation, look: newLook(presentation.look.identity), readonly: true } : presentation);
+  portrait.present(before ? { ...presentation, look: clearMakeup(presentation.look), readonly: true } : presentation);
 }
 
 function dispatch(action: Action): void {
   const previous = currentLook();
   const previousPhase = readSession().phase;
+  const previousWorkspace = presentSession(session).workspace;
   const next = step(session, action);
+  const workspace = presentSession(next).workspace;
+  if (workspace === "customize" && previousWorkspace !== "customize") makeupScroll = { x: scrollX, y: scrollY };
   session = next;
   if (currentLook() !== previous || action.type === "start" || action.type === "finish") revision++;
   before = false;
   applyPresentation();
   render();
+  if (workspace !== previousWorkspace) {
+    if (workspace === "customize") {
+      query("#toast").hidden = true;
+      query("#customization-notice").hidden = true;
+      query("#customization-heading").focus({ preventScroll: true });
+    } else {
+      if (makeupScroll !== null) window.scrollTo(makeupScroll.x, makeupScroll.y);
+      makeupScroll = null;
+      if (session.phase === "editing") query("#customize-button").focus({ preventScroll: true });
+    }
+  }
   if (session.phase !== "editing") window.clearInterval(timer);
   if (next.phase === "reveal" && previousPhase !== "reveal") {
     const id = next.submission.id;
@@ -265,9 +286,13 @@ function renderClock(): void {
     const seconds = Math.max(0, Math.ceil((mode.deadline! - Date.now()) / 1000));
     query("#clock").textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} remaining`;
     query("#clock").classList.toggle("clock-urgent", seconds <= 30);
+    query("#customization-clock").textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} remaining`;
+    query("#customization-clock").classList.toggle("clock-urgent", seconds <= 30);
   } else {
     query("#clock").textContent = mode?.kind === "practice" ? "No timer. No brief score." : "No timer · solo brief match";
     query("#clock").classList.remove("clock-urgent");
+    query("#customization-clock").textContent = mode?.kind === "practice" ? "Practice · no timer" : "No timer";
+    query("#customization-clock").classList.remove("clock-urgent");
   }
 }
 
@@ -275,9 +300,16 @@ function render(): void {
   const editing = session.phase === "editing" ? session : null;
   const ready = portraitState === "ready";
   const brush = editing?.brush ?? defaultBrush();
+  const presentation = presentSession(session);
+  const customizing = presentation.workspace === "customize";
+  query("#studio").dataset.workspace = presentation.workspace;
+  document.documentElement.dataset.workspace = presentation.workspace;
   query("#studio").classList.toggle("is-result", !editing);
+  for (const selector of ["#customization-header", "#customization-controls", "#customization-footer", "#inspection-hint"]) query(selector).hidden = !customizing;
+  for (const selector of [".site-header", ".site-footer", ".skip-link", ".tool-rail", ".cosmetics-panel", ".brief-bar", ".stage-top-controls", ".framing-controls", "#before-button", ".view-divider", ".canvas-caption"]) query(selector).hidden = customizing;
+  query<HTMLButtonElement>("#customize-button").disabled = !editing;
   query("#portrait-stage").dataset.phase = session.phase;
-  query("#portrait-stage").dataset.framing = editing?.framing ?? "face";
+  query("#portrait-stage").dataset.framing = presentation.framing;
   query("#mode-label").textContent = selectedKind === "practice" ? "THE BRIEF / PRACTICE, NO SCORE" : "THE BRIEF / SOLO CHALLENGE";
   query("#theme-title").textContent = themes[selectedTheme].title;
   query("#theme-brief").textContent = themes[selectedTheme].brief;
@@ -305,27 +337,27 @@ function render(): void {
   mirror.setAttribute("aria-pressed", String(brush.mirror));
   mirror.querySelector("span")!.textContent = brush.mirror ? "Mirror on" : "Mirror off";
   mirror.disabled = !editing;
-  query<HTMLButtonElement>("#undo-button").disabled = editing === null || editing.history.past.length === 0;
-  query<HTMLButtonElement>("#redo-button").disabled = editing === null || editing.history.future.length === 0;
+  for (const selector of ["#undo-button", "#customization-undo"]) query<HTMLButtonElement>(selector).disabled = editing === null || editing.history.past.length === 0;
+  for (const selector of ["#redo-button", "#customization-redo"]) query<HTMLButtonElement>(selector).disabled = editing === null || editing.history.future.length === 0;
   query<HTMLButtonElement>("#clear-button").disabled = !editing || currentLook().strokes.length === 0;
   query<HTMLButtonElement>("#before-button").disabled = !ready;
   query("#before-button").setAttribute("aria-pressed", String(before));
   query("#before-badge").hidden = !before;
   for (const id of ["#zoom-in", "#zoom-out"]) query<HTMLButtonElement>(id).disabled = !ready;
-  query("#finish-bar").hidden = !editing;
+  query("#finish-bar").hidden = !editing || customizing;
   query<HTMLButtonElement>("#finish-button").disabled = !ready || !editing;
   query("#reveal-note").hidden = session.phase !== "reveal";
   query("#editor-panel").hidden = !editing;
   query("#result-panel").hidden = session.phase !== "result";
   query("#active-tool").textContent = tools[brush.tool].label;
   query("#tool-description").textContent = toolDescriptions[brush.tool];
-  const region = tools[brush.tool].region;
+  const region = toolRegion(brush.tool);
   const regionHint = region === "valid" ? "Anywhere on the paintable face" : `${regions[region].label} only`;
   query("#quick-active-tool").textContent = tools[brush.tool].label;
   query("#allowed-region").textContent = regionHint;
   const actionHint = brush.tool === "blend" ? "Move over existing makeup to soften its edges. More passes increase the effect."
     : brush.tool === "erase" ? "Drag over makeup to remove it." : "Choose a color and paint.";
-  query("#canvas-help").textContent = before ? "Before view. Select Before / after to keep painting." : !editing ? "Your finished look. Save it, share it, or make it a new beginning." : editing.navigation === "turn" ? "Turn mode. Drag to rotate. Choose Paint to make a mark." : `${tools[brush.tool].label}. ${regionHint}. ${actionHint}`;
+  query("#canvas-help").textContent = customizing ? "Drag to turn your portrait. Use zoom to inspect. Your makeup is not editable here." : before ? "Before view. Select Before / after to keep painting." : !editing ? "Your finished look. Save it, share it, or make it a new beginning." : editing.navigation === "turn" ? "Turn mode. Drag to rotate. Choose Paint to make a mark." : `${tools[brush.tool].label}. ${regionHint}. ${actionHint}`;
   const pigment = tools[brush.tool].operation === "pigment";
   const opacityLabel = brush.tool === "blend" ? "Strength" : "Opacity";
   query("#brush-opacity-label").textContent = opacityLabel;
@@ -441,45 +473,48 @@ function renderResult(): void {
   }
 }
 
-type AppearanceField = "eyes" | "complexion" | "hairColor" | "hairStyle";
-const appearanceDefinitions = [
-  { field: "eyes", label: "Iris color", entries: catalog.eyes, approved: Object.keys(catalog.eyes) },
-  { field: "complexion", label: "Complexion tint", entries: catalog.complexions, approved: inspectedAppearance.complexions },
-  { field: "hairColor", label: "Hair color tint", entries: catalog.hairColors, approved: inspectedAppearance.hairColors },
-  { field: "hairStyle", label: "Fitted hair", entries: catalog.hairStyles, approved: inspectedAppearance.hairStyles },
-] as const;
+const appearanceDefinitions = avatarFields.map((field) => ({ field, label: avatarLabels[field], entries: avatarCatalog[field] }));
 
 function buildAppearance(): void {
   const container = query("#appearance-fields");
   for (const definition of appearanceDefinitions) {
-    const label = document.createElement("label");
-    label.className = "appearance-field";
-    label.textContent = definition.label;
-    const select = document.createElement("select");
-    select.id = `appearance-${definition.field}`;
-    select.setAttribute("aria-label", definition.label);
+    const fieldset = document.createElement("fieldset");
+    fieldset.className = "appearance-field";
+    const legend = document.createElement("legend");
+    legend.textContent = definition.label;
+    const choices = document.createElement("div");
+    choices.className = "appearance-choices";
     for (const [id, entry] of Object.entries(definition.entries)) {
-      if (!(definition.approved as readonly string[]).includes(id)) continue;
-      const option = document.createElement("option");
-      option.value = id;
-      option.textContent = entry.label;
-      select.append(option);
+      const label = document.createElement("label");
+      label.className = "appearance-choice";
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = `appearance-${definition.field}`;
+      radio.id = `appearance-${definition.field}-${id}`;
+      radio.value = id;
+      radio.addEventListener("change", () => { if (radio.checked) changeAppearance(definition.field, radio.value); });
+      const name = document.createElement("span");
+      name.textContent = entry.label;
+      label.append(radio, name);
+      choices.append(label);
     }
-    select.addEventListener("change", () => changeAppearance(definition.field, select.value));
-    label.append(select);
-    container.append(label);
+    fieldset.append(legend, choices);
+    container.append(fieldset);
   }
 }
 
 function renderAppearance(): void {
   const identity = currentLook().identity;
   for (const definition of appearanceDefinitions) {
-    query<HTMLSelectElement>(`#appearance-${definition.field}`).value = identity[definition.field];
+    for (const radio of document.querySelectorAll<HTMLInputElement>(`input[name="appearance-${definition.field}"]`)) radio.checked = radio.value === identity[definition.field];
   }
+  query("#appearance-status").textContent = portraitState === "ready" ? "Portrait ready. Changes apply as you choose."
+    : portraitState === "loading" ? "Updating your portrait. You can keep choosing."
+    : "Portrait unavailable. Use Try again in the preview.";
 }
 
-function changeAppearance(field: AppearanceField, value: string): void {
-  if (session.phase !== "editing") return;
+function changeAppearance(field: AvatarChoice, value: string): void {
+  if (session.phase !== "editing" || session.workspace !== "customize") return;
   const parsed = identityFromInput({ ...session.history.current.identity, [field]: value });
   if (parsed.ok) dispatch({ type: "identity", identity: parsed.value });
   else announce(parsed.error, true);
@@ -530,8 +565,10 @@ query<HTMLInputElement>("#custom-color").addEventListener("input", (event) => {
   if (parsed.ok) updateBrush({ color: parsed.value.color });
 });
 query("#mirror-button").addEventListener("click", () => { if (session.phase === "editing") updateBrush({ mirror: !session.brush.mirror }); });
-query("#undo-button").addEventListener("click", () => dispatch({ type: "undo" }));
-query("#redo-button").addEventListener("click", () => dispatch({ type: "redo" }));
+for (const selector of ["#undo-button", "#customization-undo"]) query(selector).addEventListener("click", () => dispatch({ type: "undo" }));
+for (const selector of ["#redo-button", "#customization-redo"]) query(selector).addEventListener("click", () => dispatch({ type: "redo" }));
+query("#customize-button").addEventListener("click", () => dispatch({ type: "workspace", workspace: "customize" }));
+query("#customization-done").addEventListener("click", () => dispatch({ type: "workspace", workspace: "makeup" }));
 query("#clear-button").addEventListener("click", () => showDialog("#clear-dialog"));
 query("#confirm-clear").addEventListener("click", () => {
   dispatch({ type: "clearConfirmed" });
@@ -549,7 +586,10 @@ query("#before-button").addEventListener("click", () => {
 query("#help-button").addEventListener("click", () => showDialog("#help-dialog"));
 query("#credits-button").addEventListener("click", () => showDialog("#credits-dialog"));
 query("#stage-credits").addEventListener("click", () => showDialog("#credits-dialog"));
-query("#retry-button").addEventListener("click", () => window.location.reload());
+query("#retry-button").addEventListener("click", () => {
+  if (portrait === null) window.location.reload();
+  else portrait.retryAppearance();
+});
 query("#dismiss-toast").addEventListener("click", () => { query("#toast").hidden = true; });
 
 query("#brief-button").addEventListener("click", () => {
@@ -597,7 +637,7 @@ function finishLook(): void {
 query("#finish-button").addEventListener("click", finishLook);
 query("#next-button").addEventListener("click", () => {
   selectedTheme = themeIds[(themeIds.indexOf(selectedTheme) + 1) % themeIds.length] ?? "orchid-hour";
-  startRound(newLook(currentLook().identity));
+  startRound(clearMakeup(currentLook()));
   canvas.focus({ preventScroll: true });
   query("#studio").scrollIntoView({ block: "start", behavior: "instant" });
 });
@@ -608,18 +648,20 @@ query("#remix-button").addEventListener("click", () => {
   announce("The look is yours to edit again.");
 });
 query("#replay-button").addEventListener("click", () => {
-  startRound(newLook(currentLook().identity));
+  startRound(clearMakeup(currentLook()));
   canvas.focus({ preventScroll: true });
   query("#studio").scrollIntoView({ block: "start", behavior: "instant" });
 });
 
 async function loadGuides(): Promise<void> {
   try {
-    const response = await fetch(`${import.meta.env.BASE_URL}face/v1/asset.json`);
+    const response = await fetch(`${import.meta.env.BASE_URL}face/v2/asset.json`);
     if (!response.ok) return;
     const metadata: unknown = await response.json();
-    if (typeof metadata !== "object" || metadata === null || !("id" in metadata) || metadata.id !== "rain-portrait-v1" || !("landmarks" in metadata)) return;
-    const landmarks = metadata.landmarks;
+    if (typeof metadata !== "object" || metadata === null || !("id" in metadata) || metadata.id !== "rain-portrait-v2" || !("paintAtlas" in metadata)) return;
+    const atlas = metadata.paintAtlas;
+    if (typeof atlas !== "object" || atlas === null || !("landmarks" in atlas)) return;
+    const landmarks = atlas.landmarks;
     if (typeof landmarks !== "object" || landmarks === null) return;
     const parsed = {} as Record<GuideKey, UV>;
     for (const key of guideKeys) {
@@ -656,7 +698,7 @@ query("#guided-button").addEventListener("click", () => {
 });
 
 function beginJob(name: string): number | null {
-  if (jobs.has(name)) return null;
+  if (jobs.has(name) || (name !== "copy" && portraitState !== "ready")) return null;
   const token = ++jobCounter;
   jobs.set(name, token);
   renderJobs();
@@ -973,9 +1015,14 @@ async function loadSharedLook(): Promise<void> {
 }
 window.addEventListener("hashchange", () => { void loadSharedLook(); });
 window.addEventListener("keydown", (event) => {
+  if (document.querySelector("dialog[open]") !== null || session.phase !== "editing") return;
+  if (event.key === "Escape" && session.workspace === "customize") {
+    event.preventDefault();
+    dispatch({ type: "workspace", workspace: "makeup" });
+    return;
+  }
   const target = event.target;
   if (target instanceof HTMLElement && (target.matches("input, select, textarea") || target.isContentEditable)) return;
-  if (document.querySelector("dialog[open]") !== null || session.phase !== "editing") return;
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
     event.preventDefault();
     dispatch({ type: event.shiftKey ? "redo" : "undo" });
@@ -986,7 +1033,7 @@ window.addEventListener("keydown", (event) => {
     dispatch({ type: "redo" });
     return;
   }
-  if (!event.ctrlKey && !event.metaKey && !event.altKey && /^[1-7]$/.test(event.key)) {
+  if (session.workspace === "makeup" && !event.ctrlKey && !event.metaKey && !event.altKey && /^[1-7]$/.test(event.key)) {
     const tool = toolIds[Number(event.key) - 1];
     if (tool !== undefined) { event.preventDefault(); chooseTool(tool); }
   }
@@ -999,6 +1046,22 @@ window.addEventListener("pagehide", (event) => {
   portrait?.dispose();
 });
 
+function appearanceAvailability(state: AppearanceAvailability): void {
+  if (portrait === null) return;
+  portraitState = state.kind;
+  query("#portrait-stage").dataset.state = state.kind;
+  query("#stage-message").hidden = state.kind === "ready";
+  query("#retry-button").hidden = state.kind !== "error";
+  if (state.kind === "loading") {
+    query("#stage-message-title").textContent = "Updating your portrait.";
+    query("#stage-message-copy").textContent = "Your selected colors are loading. Painting resumes when they are ready.";
+  } else if (state.kind === "error") {
+    query("#stage-message-title").textContent = "Those colors could not load.";
+    query("#stage-message-copy").textContent = state.message;
+  }
+  render();
+}
+
 buildAppearance();
 refreshSavedCount();
 renderBriefRules(selectedTheme);
@@ -1009,6 +1072,7 @@ void import("./portrait").then(({ mountPortrait }) => mountPortrait(
   canvas,
   (stroke) => dispatch({ type: "stroke", stroke }),
   (message) => { dispatch({ type: "inputRejected", message }); announce(message, true); },
+  appearanceAvailability,
 )).then((mounted) => {
   portrait = mounted;
   portraitState = "ready";

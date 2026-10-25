@@ -1,88 +1,126 @@
-# Load the Rain portrait
+# The Rain v2 portrait asset
 
-Use `v1/head.glb` as a static portrait. Read `v1/asset.json` for the exact bounds, mesh names, materials, paint coordinates, and limits.
+`public/face/v2/` is the runtime portrait distribution. `asset.json` records its file hashes, meshes, morph targets, paint contract, and map dimensions. `art/avatar-v2.json` defines the choices and authoring recipes. `art/neutral/` contains locked authoring inputs. The app does not load that directory.
 
-## Keep the required credit
+## Distributed files
 
-Display `Rain Rig (CC) Blender Foundation | studio.blender.org` in the app's asset credits. Link to `https://creativecommons.org/licenses/by/4.0/` and identify the portrait as modified.
+The distribution contains these files:
 
-Keep `CREDITS.txt`, `provenance.json`, and `licenses/` with the distributed asset. Do not describe this art as AI-generated or photorealistic.
+| File | Content |
+| --- | --- |
+| `head.glb` | The portrait geometry, embedded neutral color maps, position and normal morphs, and both hairstyle component sets. |
+| `maps/skin-{fair,warm,tan,brown,deep}.png` | Five 2048 by 2048 face color maps. |
+| `maps/bust-{fair,warm,tan,brown,deep}.png` | Five matching 512 by 512 bust color maps. |
+| `maps/hair-{espresso,chestnut,plum,blonde}.png` | Four 1024 by 1024 hair color maps. |
+| `maps/eyes-{blue,hazel,olive}.png` | Three 1024 by 1024 iris color maps. |
+| `makeup-blank.png` and `masks/` | The blank paint image and six 1024 by 1024 masks. |
+| `source-correspondence.json` | The exact source-position and base-UV correspondence used for the full-mouth target. |
+| `CREDITS.txt`, `provenance.json`, and `licenses/` | Required credit, source hashes, modification records, and license texts. |
 
-## Frame the head
+The GLB is 10,562,028 bytes. It stores 14 meshes and 130,014 triangles across both hairstyle sets. These file totals are not an active-scene triangle count or a measured device budget.
 
-1. Load `/face/v1/head.glb` with `GLTFLoader`.
-2. Keep its meter scale and its node transforms.
-3. Use `+Y` as up and `+Z` as front.
-4. Aim the camera at `[0, 0.277, 0]`.
-5. Start an orthographic camera at `[0, 0.277, 1.7]` with a vertical span of `0.54` meters.
-6. Limit portrait rotation to about 28 degrees horizontally and 12 degrees vertically until you test other views.
-7. Use broad neutral light with a weak lavender fill. Avoid a strong top rim light, which makes the sculpted hair too shiny.
+## Shape and component contract
 
-Keep the lower edge of the cropped bust outside the image. Do not show the open underside or the cropped arm ends.
+The head uses meters, with +Y up and +Z forward. Neutral attributes, indices, node transforms, materials, base UVs, and paint UVs remain locked to `art/neutral/head.glb`. Morph targets add position and normal deltas without changing that topology.
 
-## Keep makeup separate from skin
+The `Face` mesh has seven named targets:
 
-1. Find the mesh named `Face`.
-2. Keep its existing `Skin` material map on `uv`, which is `TEXCOORD_0`.
-3. Read the paint coordinates from `uv1`, which is `TEXCOORD_1`.
-4. Create a transparent paint canvas with a separate undo history.
-5. Set the paint texture's `flipY` to `false` and its color space to `SRGBColorSpace`.
-6. Load the masks with `flipY=false` and `NoColorSpace`.
-7. Multiply the paint alpha by the red channel of `masks/paint-valid.png`.
-8. Blend the paint color over the material's sampled base color. Do not draw into `skin-base.png`.
-9. Use a separate roughness blend for gloss. Do not simulate gloss only with a brighter lip color.
-10. Clear the paint canvas to remove makeup. Do not replace or recolor the base skin during removal.
+- `face-soft` and `face-angular` change the face shape.
+- `nose-broad` and `nose-rounded` change the nose shape.
+- `mouth-full` and `mouth-wide` change the mouth shape.
+- `eyes-round` changes the eye aperture.
 
-The exported paint UV uses a top-left image convention. Map a UV hit to canvas pixels with `x=u*width` and `y=v*height`. The equivalent frontal formula is `u=(localX+0.15)/0.30` and `v=(0.445-localY)/0.295`.
+Balanced choices use zero weights. Each other categorical choice applies its named target at weight 1. The registry defines 54 face, nose, mouth, and eye-shape combinations. The generator pins the neck, hairline, ears, and rear of the face. The full-mouth target transfers the source lip shape keys through exact position and UV correspondence.
 
-Do not regenerate that projection for every vertex. Only approved front-visible polygons have projected coordinates. Other polygons use the reserved UV `[0,0]`. Keep the three-pixel texture border transparent.
+`Lashes` has its own fitted `eyes-round` target. The renderer applies the face and lash targets together. `Brows`, `Eye.L`, `Eye.R`, and `EyeHighlights` remain separate meshes. The opaque textured eyes omit the source refractive cornea. Fixed catchlights do not provide tested gaze or blink animation. There are no expression presets.
 
-Raycast all visible portrait meshes. Accept a brush hit only when the nearest visible hit is `Face` and its paint UV is not `[0,0]`. This prevents paint through the eyes or hair. Use the interpolated second UV attribute, not the first UV hit.
+Hairstyle visibility follows the registry's complete component sets:
 
-Use `masks/lips.png` for lipstick. Use the separate cheek and eyelid masks for soft regional tools. Treat those soft masks as guides, not complete anatomical segmentation.
+| Choice | Visible components |
+| --- | --- |
+| Ponytail | `Hair`, `HairSweep`, `HairTail`, `HairTie`. |
+| Crown bun | `Hair`, `HairSweep`, `HairBun`, `BunBand`. |
 
-## Change the eye color
+`HairBun` is a separate ridged crown mesh. `BunBand` is its fitted fabric band. Selecting the bun hides the ponytail and its tie. It does not reshape the ponytail into a bun.
 
-1. Find `Eye.L` and `Eye.R`.
-2. Keep the opaque `IrisSclera` material.
-3. Load `eyes-blue.png`, `eyes-hazel.png`, or `eyes-olive.png` as its color map.
-4. Set an external eye map's `flipY` to `false` and its color space to `SRGBColorSpace`.
-5. Keep roughness near `0.22` and clearcoat near `0.35`.
+The current renderer limits turning to 28 degrees horizontally and 12 degrees vertically. Views outside that range need separate art and picking checks. The cropped bust has an open underside and cropped arm ends that remain outside the supported framing.
 
-Do not add an opaque cornea over the eyes. The export deliberately uses the textured eye meshes without the source refractive cornea.
+## Paint coordinates and masks
 
-Keep `EyeHighlights` attached to the portrait. Remove or refit those fixed catchlights if you later add eye movement. This asset has no tested gaze or blink animation.
+`Face` samples its immutable base color through `uv`, which is `TEXCOORD_0`. Makeup uses `uv1`, which is `TEXCOORD_1`. The frozen atlas identifier is `rain-front-v1`. That identifier names the paint coordinates, not a runtime portrait revision.
 
-## Verify browser integration
+The atlas uses a top-left image convention. A hit maps to canvas pixels with `x=u*width` and `y=v*height`. Its authored frontal projection is `u=(localX+0.15)/0.30` and `v=(0.445-localY)/0.295` on eligible polygons only. Those coordinates stay fixed when the mesh morphs. They are not recalculated from the posed vertex positions.
 
-Check the following conditions before release:
+Rear, hidden, and out-of-range polygons use the reserved UV `[0,0]`. Every paint image retains a transparent three-pixel border. The red channel of `masks/paint-valid.png` limits all tools to paintable face skin.
 
-- Compare the browser's front and rotated views with `tmp/art-probe/evidence/rain-same-light.png` and `paint-three-quarter.png`.
-- Paint one cheek only. Rotate the head and confirm that the mark stays on that cheek.
-- Paint the lips. Confirm that no color reaches the teeth area, eyes, or skin outside the intended border.
-- Clear all makeup. Confirm that the source freckles and natural lip color return unchanged.
-- Fill the paint canvas except its reserved border. Inspect the rear head and confirm that it remains unpainted.
-- Test mouse and touch painting, pointer cancellation, undo, resize, and restored saved looks.
-- Check load time, GPU memory, and frame rate on a real lower-end phone. The asset has 111,070 triangles and a 4.79 MB uncompressed GLB. It is not a measured mobile budget.
+The tool registry in `src/look.ts` has one region per tool. Lipstick uses `masks/lips.png`. Blush, eyeshadow, liner, sparkle stamp, erase, and blend use the valid-face mask. Cheek and eyelid masks remain scoring guides, not restrictions on blush or eyeshadow. Guided apply uses the manifest's paint-UV landmarks.
 
-Do not expose identity or expression presets that the asset does not contain. The supported geometry is one neutral Rain portrait. The only supplied appearance variants are the iris recolors.
+Pigment textures use `flipY=false` and `SRGBColorSpace`. Masks and the finish texture use `flipY=false` and `NoColorSpace`. The material composites pigment after it samples the base map. A separate finish channel changes roughness. Removal clears makeup without changing freckles, natural lip color, or the selected complexion map.
 
-## Repeat the export
+## Morph-aware picking
 
-Keep the source files and license records under `tmp/asset-research/`. The source paths and ZIP hash are in `provenance.json`.
+`src/picking.ts` builds a per-instance `SkinnedMeshBVH` for meshes with position morphs. The renderer refits those trees after each complete face and lash pose change. Other meshes use static geometry indexes. Picking does not change global Three.js prototypes or triangle order.
 
-Run the export from the repository root:
+The renderer raycasts all visible portrait meshes. A brush hit is valid only when the nearest hit is `Face`, its interpolated second UV avoids the reserved border, and the valid-face mask permits paint. Eyes, lashes, and visible hair can therefore block a brush. Mirror painting reflects the hit in local X and raycasts again rather than assuming that UV coordinates are symmetric.
+
+## Authored color maps
+
+Complexion maps preserve source detail and natural lip contrast through offline color recipes. Matching bust maps retain the fitted neck seam. Hair maps preserve strand contrast, and the registry supplies a matching brow color. These maps are recolors of the Rain artwork, not newly photographed skins or AI-generated artwork.
+
+`src/appearance.ts` reuses embedded maps for the default Warm complexion, Espresso hair, and Blue irises. It loads other selected maps on demand. External color maps use `flipY=false` and `SRGBColorSpace`. The renderer rejects stale requests and blocks paint, analysis, and export while the requested appearance is loading or unavailable.
+
+## Required credit
+
+The required credit is `Rain Rig (CC) Blender Foundation | studio.blender.org`.
+
+The app's asset credits and exported covers retain that credit, identify the portrait as modified, and give the Creative Commons Attribution 4.0 license at <https://creativecommons.org/licenses/by/4.0/>. The source page is <https://studio.blender.org/characters/rain/>. Blender Foundation does not endorse the game.
+
+`v2/CREDITS.txt`, `v2/provenance.json`, and `v2/licenses/` belong with the distributed asset. The notices record the bounded morphs, fitted lashes, separate bun, and offline recolors alongside the neutral portrait modifications.
+
+## Reproduce the distribution
+
+Generation requires Blender with NumPy and Pillow available to its Python interpreter. The checked-in inputs are `art/avatar-v2.json` and `art/neutral/`. The licensed source files must also exist at these recorded paths:
+
+- `tmp/asset-research/assets/rain-v33.zip`.
+- `tmp/asset-research/assets/Rain v3.3/rain_v3.2.blend`.
+
+`v2/provenance.json` records the download URL and archive hash. The generator checks that hash and verifies the unpacked `.blend` against the ZIP member. It opens the source with scripts disabled and does not save it. The public preflight uses the generated files and does not need these source downloads.
+
+Run generation and the distribution preflight from the repository root.
 
 ```sh
 blender --background --factory-startup --disable-autoexec --threads 4 \
-	--python-exit-code 1 --python scripts/prepare-face.py -- \
-	--render-dir tmp/art-probe/final
+	--python-exit-code 1 --python scripts/prepare-avatar.py -- \
+	--output-dir public/face/v2
+node scripts/verify-assets.mjs public/face/v2 --geometry-only
 ```
 
-Run the separate artifact check:
+`npm run verify:assets` runs the same preflight. Generation is self-contained in `scripts/prepare-avatar.py`. It retains the neutral binary data, adds the targets and bun, writes the maps and notices, and records input and output hashes. It verifies that the neutral inputs remain unchanged.
+
+The public directory contains runtime files only. The generator rejects render output there and rejects output paths outside the allowed public or proof directories.
+
+Generate a separate proof with fresh GLB-import renders.
 
 ```sh
-node tmp/art-probe/verify-glb.mjs
+blender --background --factory-startup --disable-autoexec --threads 4 \
+	--python-exit-code 1 --python scripts/prepare-avatar.py -- --render
+node scripts/verify-assets.mjs tmp/avatar-customization/asset-proof
 ```
 
-Use `--research-dir` if the licensed source folder is elsewhere. Do not enable the source file's embedded scripts. The exporter needs Blender's built-in Python and NumPy, not external generation services.
+Proof contact sheets also need DejaVu Sans at `/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`. The full proof includes each choice in front and three-quarter views, color and clay views, and all 54 shape combinations in clay.
+
+The checker verifies hashes, locked topology and UVs, masks, combined morph bounds, triangle area and orientation, lash attachment, closed-mouth samples, bun closure, map detail, and neck color matching. Without `--geometry-only`, it also checks the render index and image hashes. Those checks are conservative local tests, not an exhaustive self-intersection proof or human art approval.
+
+## Runtime release checks
+
+Release checks cover these behaviors:
+
+- Asymmetric cheek paint stays on the same skin when the face morphs or turns.
+- Lipstick follows the frozen lip mask without reaching teeth, eyes, or other skin.
+- Removing makeup reveals the selected base maps unchanged.
+- Rear and hidden polygons remain unpainted.
+- Visible eyes, lashes, and hair block brush hits after shape and hairstyle changes.
+- Loading failures, retry, undo, redo, saved looks, and capture restore the correct live appearance.
+- PNG exports use the selected identity and retain the credit.
+
+Physical lower-end phone load, GPU memory, brush response, thermal behavior, and export remain separate device checks. Automated geometry and Chromium checks do not establish those results.

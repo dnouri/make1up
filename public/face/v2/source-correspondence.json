@@ -1,0 +1,20 @@
+{
+  "method": "Exact rounded position buckets plus per-loop base UV agreement. No nearest-neighbor fallback.",
+  "evaluatedSourceVertices": 25428,
+  "lockedSplitVertices": 30982,
+  "matchedSplitVertices": 30982,
+  "maximumPositionErrorMeters": 0.0,
+  "maximumUvTolerance": 2e-06,
+  "sourceLoopOrderUnchangedForTargets": true,
+  "mappingSha256": "c3ae03549b27b65b51465cb9d16113286827694e561d3d8b5105057620db041c",
+  "preservedNonzeroSourceKeys": {
+    "LipsAdjust": 1.0,
+    "Head_Forward": 0.0010725966421887279
+  },
+  "sourceKeyRecipes": {
+    "mouth-full": {
+      "LipsPuff_Upper": 0.6,
+      "LipsPuff_Lower": 0.6
+    }
+  }
+}

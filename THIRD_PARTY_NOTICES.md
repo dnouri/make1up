@@ -2,15 +2,20 @@
 
 ## Rain portrait
 
-`public/face/v1/` contains a modified Rain character portrait.
+`public/face/v2/` contains the modified Rain character portrait used by the game.
 
 Rain Rig (CC) Blender Foundation | studio.blender.org.
 
 - Source is <https://studio.blender.org/characters/rain/>.
 - License is Creative Commons Attribution 4.0 International, <https://creativecommons.org/licenses/by/4.0/>.
-- Local license and source notices are under `public/face/licenses/`.
-- `public/face/provenance.json` identifies the exact source download, hash, and modifications.
-- Changes include the static portrait export, material conversion, crop, fitted neck seam, brows, ponytail, fixed catchlights, iris recolors, second paint UVs, and masks.
+- Local license and source notices are under `public/face/v2/licenses/`.
+- `public/face/v2/CREDITS.txt` contains the distributed credit.
+- `public/face/v2/provenance.json` identifies the exact source download, hash, and modifications.
+- `public/face/v2/asset.json` records generated file hashes, morph targets, maps, and the paint contract.
+- Changes include the neutral portrait export, material conversion, crop, fitted neck seam, brows, ponytail, fixed catchlights, iris recolors, second paint UVs, and masks.
+- V2 adds bounded face, nose, mouth, and eye morphs, fitted lash deformation, a separate crown-bun mesh and fabric band, and offline complexion and hair recolors. The recolors are not newly photographed skins.
+
+`art/neutral/` holds the licensed neutral authoring inputs used to reproduce v2. The app does not load them.
 
 The app's credit dialog and exported covers retain the credit and license information. Blender Foundation does not endorse this game. The portrait is not AI-generated.
 

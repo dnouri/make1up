@@ -233,17 +233,18 @@ function metrics(raw) {
 const startMachine = machine();
 await json('environment-before.json', startMachine);
 const html = await (await fetch(baseURL)).text();
-const entry = html.match(/src="(\/assets\/index-[^"]+\.js)"/)?.[1];
+const entry = html.match(/src="([^"]*\/assets\/index-[^"]+\.js)"/)?.[1];
 assert(entry, 'The target must serve a production entry bundle.');
 const localHTML = await fs.readFile(path.join(root, 'dist/index.html'), 'utf8');
-const localEntry = localHTML.match(/src="(\/assets\/index-[^"]+\.js)"/)?.[1];
+const localEntry = localHTML.match(/src="([^"]*\/assets\/index-[^"]+\.js)"/)?.[1];
 assert.equal(entry, process.env.PERF_EXPECT_ENTRY ?? localEntry, 'The preview must match the local production build.');
 const servedEntry = new Uint8Array(await (await fetch(new URL(entry, baseURL))).arrayBuffer());
-const localEntryBytes = await fs.readFile(path.join(root, 'dist', entry));
+const distEntry = entry.replace(/^\/make1up\//, '').replace(/^\//, '');
+const localEntryBytes = await fs.readFile(path.join(root, 'dist', distEntry));
 assert.equal(createHash('sha256').update(servedEntry).digest('hex'), createHash('sha256').update(localEntryBytes).digest('hex'), 'The preview entry bytes must match dist.');
-const contract = JSON.parse(await fs.readFile(path.join(root, 'dist/face/v1/asset.json'), 'utf8'));
-const glb = await fs.readFile(path.join(root, 'dist/face/v1/head.glb'));
-assert.equal(createHash('sha256').update(glb).digest('hex'), contract.sha256);
+const contract = JSON.parse(await fs.readFile(path.join(root, 'dist/face/v2/asset.json'), 'utf8'));
+const glb = await fs.readFile(path.join(root, 'dist/face/v2/head.glb'));
+assert.equal(createHash('sha256').update(glb).digest('hex'), contract.glb.sha256);
 const gltf = JSON.parse(glb.toString('utf8', 20, 20 + glb.readUInt32LE(12)));
 const structuralTriangles = gltf.meshes.reduce((sum, mesh) => sum + mesh.primitives.reduce((count, primitive) =>
   count + gltf.accessors[primitive.indices].count / 3, 0), 0);
@@ -255,7 +256,7 @@ const gpu = await browserCDP.send('SystemInfo.getInfo');
 const manifest = {
   startedAt: new Date().toISOString(), baseURL: baseURL.href, entry, probe, pairsPerVariant: pairs,
   browserVersion, launchArgs: args, gpu: gpu.gpu, variants, deviceScaleFactor: 1,
-  buildAsset: { glbBytes: glb.length, glbSha256: contract.sha256, structuralTriangles, paintTextureSize: contract.paint.textureSize },
+  buildAsset: { glbBytes: glb.length, glbSha256: contract.glb.sha256, structuralTriangles, paintTextureSize: contract.paintAtlas.paint.textureSize },
   measurement: 'Budgeted readiness is navigation start to nonblank portrait pixels read after the compiled real render; this conservative upper bound includes the GPU readback/copy barrier, but excludes pixel analysis. The earlier DOM marker is separate. Input-to-pixels timing also includes a readback barrier; CPU render submission and next-frame opportunity are not physical display latency. Wrappers and Playwright/CDP automation add overhead. Long tasks overlapping verification readbacks are separated. No idle-RAF FPS is reported. The independent warm profile disables verification readbacks and is not a reported timing sample.',
   cache: 'New storage/context and Network.setCacheDisabled(true) for reported runs; browser/GPU process, shader cache, OS file cache, and server remain shared. This is not a cold-machine measurement.',
   noise: 'Unrelated browsers and the root functional suite on 4173 run concurrently. No unrelated process is stopped.',

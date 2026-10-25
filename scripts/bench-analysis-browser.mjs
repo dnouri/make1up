@@ -222,9 +222,15 @@ async function paintPolicy(source) {
     'Each paint policy registry must be declared exactly once.');
   const declaration = declarations.find((item) => item.name.text === 'tools');
   assert(declaration?.initializer, 'The exported tool registry is required.');
+  const approvedRegions = { blush: 'valid', shadow: 'valid', lipstick: 'lips', liner: 'valid', sparkle: 'valid', erase: 'valid', blend: 'valid' };
   const ignoredValues = new Set();
   for (const tool of properties(declaration.initializer)) {
-    const defaults = properties(tool.initializer).find((property) => property.name.text === 'defaults');
+    const fields = properties(tool.initializer);
+    const region = fields.find((property) => property.name.text === 'region');
+    assert(region && Object.hasOwn(approvedRegions, tool.name.text) && ts.isStringLiteral(region.initializer),
+      'Every tool needs one approved paint region.');
+    assert.equal(region.initializer.text, approvedRegions[tool.name.text], 'The approved paint region must match.');
+    const defaults = fields.find((property) => property.name.text === 'defaults');
     assert(defaults, `Missing defaults for ${tool.name.text}.`);
     const settings = properties(defaults.initializer);
     assert.deepEqual(settings.map((property) => property.name.text).toSorted(), ['color', 'finish', 'opacity', 'radius', 'softness']);
@@ -239,12 +245,13 @@ async function paintPolicy(source) {
     }
   }
   const transformed = ts.transform(ts.factory.updateSourceFile(file, statements), [(context) => {
-    const visit = (node) => ignoredValues.has(node) ? ts.factory.createNull() : ts.visitEachChild(node, visit, context);
+    const visit = (node) => ignoredValues.has(node) ? ts.factory.createNull()
+      : ts.visitEachChild(node, visit, context);
     return (node) => ts.visitNode(node, visit);
   }]);
   const structure = ts.createPrinter({ removeComments: true }).printFile(transformed.transformed[0]);
   transformed.dispose();
-  const compiled = ts.transpileModule(source, { fileName: 'look.ts', reportDiagnostics: true,
+  const compiled = ts.transpileModule(structure, { fileName: 'look.ts', reportDiagnostics: true,
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } });
   assert.equal(compiled.diagnostics?.length, 0, 'The look policy must transpile.');
   const exported = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputText).toString('base64')}`);
@@ -258,7 +265,7 @@ async function paintPolicy(source) {
 
 export async function assertPaintPolicy(original, current) {
   assert.deepEqual(await paintPolicy(original), await paintPolicy(current),
-    'The original and current paint policy must match except tool interaction defaults.');
+    'The approved paint registry must match except tool interaction defaults.');
 }
 
 function analyzePaintSegments(source) {
@@ -298,13 +305,13 @@ async function comparisonSources(baselinePath) {
   const savedManifest = path.join(path.dirname(baselinePath), 'manifest.json');
   const baselineHashes = { 'paint.ts': sha256(original), 'look.ts': sha256(look) };
   if (await exists(savedManifest)) assert.deepEqual(baselineHashes, JSON.parse(await fs.readFile(savedManifest, 'utf8')).sources);
-  await assertPaintPolicy(look, currentLook);
+  await paintPolicy(currentLook);
   const baselinePaint = graftAnalyzePaint(original, current);
   return { original, current, look, currentLook, baselineHashes, baselinePaint };
 }
 
 async function selfCheck() {
-  const { original, current, look, currentLook, baselinePaint } = await comparisonSources(path.resolve(root, options.baseline));
+  const { original, current, currentLook, baselinePaint } = await comparisonSources(path.resolve(root, options.baseline));
   assert.equal(graftAnalyzePaint(
     'export function analyzePaint() { return 1; }\nfunction oldPainter() {}\n',
     'export function beginStroke() {}\nexport function analyzePaint() { return 2; }\nfunction currentPainter() {}\n'),
@@ -313,23 +320,23 @@ async function selfCheck() {
   assert.equal(baselinePaint.includes('export function beginStroke('), true, 'The graft must retain the current paint API.');
   assert.throws(() => graftAnalyzePaint(current, current), /The saved baseline must not be the optimized analyzer/);
   assert.throws(() => graftAnalyzePaint('export function missing() {}', current), /Exactly one analyzePaint function is required/);
-  await assertPaintPolicy(look, currentLook.replace('radius: 0.045', 'radius: 0.05')
+  await assertPaintPolicy(currentLook, currentLook.replace('radius: 0.045', 'radius: 0.05')
     + '\nexport const unrelatedDocumentSettings = { version: 2 };\n');
   const policyChanges = [
     ['color: "#cc5075"', 'color: "#000000"'],
     ['cheeks: { label: "Cheeks" }', 'cheeks: { label: "Changed cheeks" }'],
     ['minimumCoverage: 0.005', 'minimumCoverage: 0.01'],
-    ['operation: "pigment", region: "cheeks"', 'operation: "erase", region: "cheeks"'],
-    ['region: "cheeks", tip: "round"', 'region: "valid", tip: "round"'],
+    ['operation: "pigment", region:', 'operation: "erase", region:'],
+    ['region: "valid"', 'region: "cheeks"'],
+    ['region: "lips"', 'region: "valid"'],
     ['tip: "round", placement: "continuous"', 'tip: "star", placement: "continuous"'],
     ['tip: "round", placement: "continuous"', 'tip: "round", placement: "stamp"'],
   ];
   for (const [before, after] of policyChanges) {
     assert(currentLook.includes(before), `Missing self-check input ${before}.`);
-    await assert.rejects(assertPaintPolicy(look, currentLook.replace(before, after)),
-      /The original and current paint policy must match/);
+    await assert.rejects(assertPaintPolicy(currentLook, currentLook.replace(before, after)), /The approved paint/);
   }
-  console.log('Analysis source self-check passed. Frozen hashes, analyzer graft, current API, allowed defaults, and palette/region/theme/tool policy rejection verified. No builds or browsers.');
+  console.log('Analysis source self-check passed. Frozen analysis hashes, analyzer graft, current API, and the single tool registry verified. Both isolated apps use the current v2 document and painter. No builds, browsers, or performance measurements.');
 }
 
 async function isolate(baselinePath) {
@@ -339,7 +346,7 @@ async function isolate(baselinePath) {
   assert(output.startsWith(allowed), `--out must be a new child of ${allowed}`);
   await fs.mkdir(output, { recursive: true });
   const sourceHashes = { src: await hashes(path.join(root, 'src')), public: await hashes(path.join(root, 'public')),
-    index: sha256(await fs.readFile(path.join(root, 'index.html'))) };
+    art: await hashes(path.join(root, 'art')), index: sha256(await fs.readFile(path.join(root, 'index.html'))) };
   const sharedDist = await hashes(path.join(root, 'dist'));
   const log = [];
   for (const side of sides) {
@@ -349,6 +356,7 @@ async function isolate(baselinePath) {
     await fs.mkdir(side.source, { recursive: true });
     await fs.cp(path.join(root, 'src'), path.join(side.source, 'src'), { recursive: true });
     await fs.cp(path.join(root, 'public'), path.join(side.source, 'public'), { recursive: true });
+    await fs.cp(path.join(root, 'art'), path.join(side.source, 'art'), { recursive: true });
     await fs.copyFile(path.join(root, 'index.html'), path.join(side.source, 'index.html'));
     await fs.copyFile(path.join(root, 'package.json'), path.join(side.source, 'package.json'));
     await fs.symlink(path.join(root, 'node_modules'), path.join(side.source, 'node_modules'), 'dir');
@@ -508,12 +516,12 @@ async function capturedLook(page) {
   const bytes = Buffer.from(match[2], 'base64url');
   const look = JSON.parse((match[1] === 'd' ? inflateSync(bytes) : bytes).toString('utf8'));
   assert.equal(look.strokes.length, 2);
-  const asset = JSON.parse(await fs.readFile(path.join(root, 'public/face/v1/asset.json'), 'utf8'));
-  const guide = (name) => asset.landmarks[name].paintUV;
+  const asset = JSON.parse(await fs.readFile(path.join(root, 'public/face/v2/asset.json'), 'utf8'));
+  const guide = (name) => asset.paintAtlas.landmarks[name].paintUV;
   const quantize = (paths) => paths.map((points) => points.map((uv) => uv.map((value) => Math.round(value * 65535) / 65535)));
   const expected = {
-    version: 1, asset: 'rain-portrait-v1',
-    identity: { geometry: 'neutral-rain', eyes: 'blue', complexion: 'source', hairColor: 'espresso', hairStyle: 'ponytail' },
+    version: 2, asset: 'rain-portrait-v2',
+    identity: JSON.parse(await fs.readFile(path.join(root, 'art/avatar-v2.json'), 'utf8')).defaults,
     strokes: [
       { brush: { tool: 'blush', color: '#cc5075', radius: 0.06, opacity: 0.6, softness: 0.45, finish: 0.4 },
         paths: quantize(['cheekLeft', 'cheekRight'].map((name) => {
@@ -553,6 +561,11 @@ async function snapshot(session) {
     resources: { requests: raw.resources.length,
       encodedBodyBytes: raw.resources.reduce((sum, entry) => sum + entry.encodedBodySize, 0),
       zeroTransferEntries: raw.resources.filter((entry) => entry.transferSize === 0).map((entry) => entry.name) } };
+}
+
+async function preserveFailureDiagnostics(run, session) {
+  try { Object.assign(run, await snapshot(session)); }
+  catch (error) { run.diagnosticFailure = { message: error.message, stack: error.stack }; }
 }
 
 function verify(run, pixels = true) {
@@ -692,7 +705,7 @@ async function cleanup(owned, browser, pids) {
     for (let attempt = 0; attempt < 50 && await exists(`/proc/${item.pid}`); attempt++) await new Promise((resolve) => setTimeout(resolve, 100));
     const alive = await exists(`/proc/${item.pid}`);
     let portReleased = false;
-    try { await freePort(item.port); portReleased = true; } catch { /* Preserve the observed cleanup failure. */ }
+    try { await freePort(item.port); portReleased = true; } catch {}
     result.previews.push({ ...item, alive, portReleased });
     if (await exists(item.log)) await fs.copyFile(item.log, path.join(output, `${item.name}.log`));
   }
@@ -770,7 +783,7 @@ async function main() {
           paired.push(run);
         } catch (error) {
           run.failure = { message: error.message, stack: error.stack };
-          try { Object.assign(run, await snapshot(session)); } catch { /* A failed navigation may have no document. */ }
+          await preserveFailureDiagnostics(run, session);
           throw error;
         } finally {
           await rememberPids();
@@ -828,10 +841,11 @@ async function main() {
     const cleaned = await cleanup(owned, browser, pids);
     cleaned.sourceUntouched = JSON.stringify(source.sourceHashes.src) === JSON.stringify(await hashes(path.join(root, 'src')));
     cleaned.publicUntouched = JSON.stringify(source.sourceHashes.public) === JSON.stringify(await hashes(path.join(root, 'public')));
+    cleaned.artUntouched = JSON.stringify(source.sourceHashes.art) === JSON.stringify(await hashes(path.join(root, 'art')));
     cleaned.indexUntouched = source.sourceHashes.index === sha256(await fs.readFile(path.join(root, 'index.html')));
     cleaned.sharedDistUntouched = JSON.stringify(source.sharedDist) === JSON.stringify(await hashes(path.join(root, 'dist')));
     await json('cleanup.json', cleaned);
-    assert(cleaned.sourceUntouched && cleaned.publicUntouched && cleaned.indexUntouched && cleaned.sharedDistUntouched, 'Shared source, public, index, or dist changed during this run.');
+    assert(cleaned.sourceUntouched && cleaned.publicUntouched && cleaned.artUntouched && cleaned.indexUntouched && cleaned.sharedDistUntouched, 'Shared source, public, art, index, or dist changed during this run.');
     assert(cleaned.previews.every((item) => !item.alive && item.portReleased), 'An owned preview was not cleaned.');
     assert(cleaned.browserProcesses.every((item) => !item.alive), 'An owned browser process remains alive.');
   }

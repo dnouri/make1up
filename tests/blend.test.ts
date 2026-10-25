@@ -12,8 +12,6 @@ import { createSession, presentSession, step } from "../src/session";
 import type { Action, Session } from "../src/session";
 import { mountPortrait } from "../src/portrait";
 import type { Portrait } from "../src/portrait";
-import { composePaint as frozenCompose } from "../benchmarks/analysis-baseline/paint";
-import { decodeLookJSON as frozenDecodeLookJSON } from "../benchmarks/analysis-baseline/look";
 
 function value<T>(result: Result<T>): T {
   if (!result.ok) throw new Error(result.error);
@@ -28,7 +26,7 @@ function masks(size = 16): PaintMasks {
 function blend(paths: readonly (readonly UV[])[] = [[[0.5, 0.5]]], changes: Partial<Brush> = {}, id = "soften"): Stroke {
   return value(captureStroke(id, {
     ...defaultBrush("blend"), radius: 0.08, opacity: 0.5, softness: 0, color: "#00ff00", finish: 1, ...changes,
-  }, paths, "soften-v1"));
+  }, paths));
 }
 
 function dot(id = "dot"): Stroke {
@@ -57,9 +55,6 @@ function put(field: PaintField, x: number, y: number, rgba: readonly number[], f
   field.finish[y * field.size + x] = finish;
 }
 
-const oldJSON = '{"version":1,"asset":"rain-portrait-v1","identity":{"geometry":"neutral-rain","eyes":"blue","complexion":"source","hairColor":"espresso","hairStyle":"ponytail"},"strokes":[{"id":"old-blend","brush":{"tool":"blend","color":"#00ff00","radius":0.08,"opacity":0.5,"softness":0,"finish":1},"paths":[[[0.2,0.4],[0.4,0.4]]]}]}';
-const oldID = "rain-v1-c7ad34f3f000d6f6";
-
 const mounted: Portrait[] = [];
 afterEach(() => {
   for (const portrait of mounted) portrait.dispose();
@@ -68,16 +63,7 @@ afterEach(() => {
 });
 
 describe("explicit Blend instructions", () => {
-  it("preserves old canonical JSON, its fingerprint, and three-argument capture", () => {
-    const old = value(decodeLookJSON(oldJSON));
-    expect(encodeLook(old)).toBe(oldJSON);
-    expect(lookFingerprint(old)).toBe(oldID);
-    const stroke = value(captureStroke("old-blend", old.strokes[0]!.brush, [[[0.2, 0.4], [0.4, 0.4]]]));
-    expect(Object.hasOwn(stroke, "algorithm")).toBe(false);
-    expect(encodeLook(value(appendStroke(newLook(), stroke)))).toBe(oldJSON);
-  });
-
-  it("captures a frozen Blend-only tag and promotes only an accepted append", () => {
+  it("captures the current Blend tag and round trips it without a document upgrade", () => {
     const stroke = blend();
     expect(stroke).toEqual({
       id: "soften", algorithm: "soften-v1",
@@ -85,43 +71,26 @@ describe("explicit Blend instructions", () => {
       paths: [[[32768 / 65535, 32768 / 65535]]],
     });
     expect(Object.isFrozen(stroke)).toBe(true);
-    const old = value(decodeLookJSON(oldJSON));
-    expect(old.version).toBe(1);
-    expect(appendStroke(old, blend(undefined, {}, "old-blend"))).toEqual({ ok: false, error: "That gesture was already applied." });
-    expect(encodeLook(old)).toBe(oldJSON);
-    const next = value(appendStroke(old, stroke));
-    expect(next.version).toBe(2);
-    expect(lookFingerprint(next).startsWith("rain-v2-")).toBe(true);
-    expect(encodeLook(next)).toContain('"paths":[[[0.5000076295109483,0.5000076295109483]]],"algorithm":"soften-v1"');
+    const next = value(appendStroke(newLook(), stroke));
     expect(value(decodeLookJSON(encodeLook(next)))).toEqual(next);
-    expect(value(decodeLook({ ...old, version: 2 })).strokes).toEqual(old.strokes);
-    expect(frozenDecodeLookJSON(encodeLook(next))).toEqual({
-      ok: false, error: "This look has an unknown version or portrait asset.",
-    });
     expect(clearMakeup(next).version).toBe(2);
-    expect(value(appendStroke(next, dot())).version).toBe(2);
+    expect(appendStroke(next, stroke).ok).toBe(false);
   });
 
-  it.each([null, "unknown", "soften-v2", 1, {}])("rejects unsupported algorithm %j at capture and decode", (algorithm) => {
+  it.each([null, "unknown", "soften-v2", 1, {}])("rejects unsupported stored algorithm %j", (algorithm) => {
     const expected = { ok: false, error: "Unknown stroke algorithm or incompatible makeup tool." };
-    expect(captureStroke("bad", defaultBrush("blend"), [[[0.2, 0.4]]], algorithm)).toEqual(expected);
     expect(decodeLook({ ...newLook(), version: 2, strokes: [{ ...value(captureStroke("bad", defaultBrush("blend"), [[[0.2, 0.4]]])), algorithm }] })).toEqual(expected);
     expect(blend().algorithm).toBe("soften-v1");
   });
 
-  it("rejects tags on pigment and erase, and rejects tagged version 1 documents", () => {
+  it("rejects missing Blend tags and tags on other tools", () => {
     for (const tool of ["liner", "erase", "lipstick"] as const) {
-      expect(captureStroke("bad", defaultBrush(tool), [[[0.2, 0.4]]], "soften-v1")).toEqual({
-        ok: false, error: "Unknown stroke algorithm or incompatible makeup tool.",
-      });
-      expect(decodeLook({ ...newLook(), version: 2, strokes: [{ ...dot(), brush: defaultBrush(tool), algorithm: "soften-v1" }] })).toEqual({
-        ok: false, error: "Unknown stroke algorithm or incompatible makeup tool.",
-      });
+      const { mirror: _mirror, ...brush } = defaultBrush(tool);
+      expect(decodeLook({ ...newLook(), strokes: [{ ...dot(), brush, algorithm: "soften-v1" }] }).ok).toBe(false);
     }
-    expect(decodeLook({ ...newLook(), strokes: [blend()] })).toEqual({
-      ok: false, error: "Tagged strokes require look version 2.",
-    });
-    expect(value(decodeLook({ ...newLook(), version: 2, strokes: [dot(), blend()] })).strokes.map((stroke) => stroke.algorithm)).toEqual([undefined, "soften-v1"]);
+    const { algorithm: _algorithm, ...untagged } = blend();
+    expect(decodeLook({ ...newLook(), strokes: [untagged] }).ok).toBe(false);
+    expect(value(decodeLook({ ...newLook(), strokes: [dot(), blend()] })).strokes.map((stroke) => stroke.algorithm)).toEqual([undefined, "soften-v1"]);
   });
 });
 
@@ -306,26 +275,9 @@ describe("dense fixed-source softening", () => {
     expect(pixel(field, 31, 32)).toEqual([0, 0, 0, 0, 0]);
   });
 
-  it("resets when the algorithm changes and keeps legacy Blend bytes", () => {
-    const input = masks();
-    const base = composePaint([dot()], input);
-    const tagged = blend();
-    const legacy = value(captureStroke(tagged.id, tagged.brush, tagged.paths));
-    const transaction = beginStroke(base, input);
-    expect(pixel(transaction.update(tagged)!, 7, 7)).toEqual([204, 80, 117, 197, 102]);
-    const expected = frozenCompose([dot(), legacy], input);
-    expect(pixel(expected, 7, 7)).toEqual([204, 80, 117, 159, 102]);
-    expect(transaction.update(legacy)).toEqual(expected);
-    expect(transaction.update(tagged)).toEqual(paintStroke(base, tagged, input));
-    const extended = blend([[[0.5, 0.5], [0.55, 0.5], [0.5, 0.5], [0.55, 0.5], [0.5, 0.5]]]);
-    expect(pixel(transaction.update(extended)!, 7, 7)).toEqual([204, 80, 117, 99, 102]);
-    expect(changed(transaction.finish(extended))).toEqual(composePaint([dot(), extended], input));
-    expect(composePaint([dot(), legacy], input)).toEqual(expected);
-  });
-
   it("discards preview ownership without touching committed pixels and restores exact Undo bytes", () => {
     const input = masks();
-    const old = value(appendStroke(newLook(), dot()));
+    const old = value(decodeLook({ ...newLook(), strokes: [dot()] }));
     const base = composePaint(old.strokes, input);
     const before = { size: base.size, rgba: base.rgba.slice(), finish: base.finish.slice() };
     const discarded = beginStroke(base, input);
@@ -337,7 +289,7 @@ describe("dense fixed-source softening", () => {
     let session = step(createSession(old), { type: "stroke", stroke: accepted.stroke });
     expect(presentSession(session).look.version).toBe(2);
     session = step(session, { type: "undo" });
-    expect(presentSession(session).look.version).toBe(1);
+    expect(presentSession(session).look.version).toBe(2);
     expect(composePaint(presentSession(session).look.strokes, input)).toEqual(before);
     session = step(session, { type: "redo" });
     expect(composePaint(presentSession(session).look.strokes, input)).toEqual(changed(accepted));
@@ -353,42 +305,32 @@ class MemoryStorage implements StoragePort {
 
 const thumbnail = "data:image/png;base64,iVBORw0KGgo=";
 
-describe("old and new persistence in the existing containers", () => {
-  it("opens an original saved ID and saves a mixed version 2 document alongside it", () => {
+describe("current Blend persistence", () => {
+  it("saves and restores the actual softening instructions", () => {
     const storage = new MemoryStorage();
-    storage.raw = JSON.stringify({ version: 1, entries: [{ id: oldID, title: "Old Blend", savedAt: 1, thumbnail, json: oldJSON }] });
-    expect(value(readLookbook(storage)).map((entry) => [entry.id, encodeLook(entry.look)])).toEqual([[oldID, oldJSON]]);
-    const mixed = value(appendStroke(value(decodeLookJSON(oldJSON)), blend()));
-    expect(value(saveLook(storage, { look: mixed, title: "New Blend", savedAt: 2, thumbnail })).alreadySaved).toBe(false);
-    const reopened = value(readLookbook(storage));
-    expect(reopened.map((entry) => [entry.look.version, entry.look.strokes.map((stroke) => stroke.algorithm)])).toEqual([
-      [2, [undefined, "soften-v1"]], [1, [undefined]],
-    ]);
-    expect(reopened[1]!.id).toBe(oldID);
-    expect(encodeLook(reopened[1]!.look)).toBe(oldJSON);
-    expect(encodeLook(reopened[0]!.look)).toBe(encodeLook(mixed));
-    expect(JSON.parse(storage.raw!).version).toBe(1);
+    const look = value(appendStroke(value(appendStroke(newLook(), dot())), blend()));
+    value(saveLook(storage, { look, title: "Softened", savedAt: 2, thumbnail }));
+    expect(value(readLookbook(storage))[0]!.look).toEqual(look);
+    expect(pixel(composePaint(value(readLookbook(storage))[0]!.look.strokes, masks()), 7, 7)).toEqual([204, 80, 117, 197, 102]);
   });
 
   it.each(["compressed", "plain"])("round trips old and new instructions through %s share links", async (format) => {
     if (format === "plain") vi.stubGlobal("CompressionStream", undefined);
-    const old = value(decodeLookJSON(oldJSON));
     const seeded = value(appendStroke(newLook(), dot()));
     const mixed = value(appendStroke(seeded, blend()));
-    for (const look of [old, mixed]) {
+    for (const look of [mixed]) {
       const fragment = value(await encodeShare(look));
       expect(fragment.slice(0, 14)).toBe(format === "plain" ? "#make1up=v1.j." : "#make1up=v1.d.");
       const decoded: Look = value(await decodeShare(fragment));
       expect(encodeLook(decoded)).toBe(encodeLook(look));
       expect(lookFingerprint(decoded)).toBe(lookFingerprint(look));
-      if (decoded.version === 1) expect(encodeLook(decoded)).toBe(oldJSON);
-      else expect(pixel(composePaint(decoded.strokes, masks()), 7, 7)).toEqual([204, 80, 117, 197, 102]);
+      expect(pixel(composePaint(decoded.strokes, masks()), 7, 7)).toEqual([204, 80, 117, 197, 102]);
     }
   });
 });
 
 const graphics = vi.hoisted(() => ({ textures: [] as import("three").DataTexture[] }));
-vi.mock("../src/picking", () => ({ indexPortrait: () => () => {} }));
+vi.mock("../src/picking", () => ({ indexPortrait: () => Object.assign(() => {}, { refit() {} }) }));
 vi.mock("three", async (importOriginal) => {
   const three = await importOriginal<typeof import("three")>();
   return {
@@ -432,7 +374,7 @@ vi.mock("three/addons/loaders/GLTFLoader.js", async () => {
   return { GLTFLoader: class {
     async loadAsync() {
       const scene = new three.Group();
-      for (const name of ["Face", "Bust", "Eye.L", "Eye.R", "Hair", "HairSweep", "HairTail", "HairTie"]) {
+      for (const name of ["Face", "Bust", "Eye.L", "Eye.R", "Hair", "HairSweep", "HairTail", "HairTie", "HairBun", "BunBand", "Brows", "Lashes"]) {
         const geometry = new three.BufferGeometry();
         geometry.setAttribute("uv1", new three.Float32BufferAttribute([0, 0], 2));
         const mesh = new three.Mesh(geometry, new three.MeshStandardMaterial({ map: new three.Texture() }));
@@ -504,7 +446,7 @@ describe("tagged pointer Blend without a browser", () => {
     const seed = value(captureStroke("seed", {
       ...defaultBrush("liner"), radius: 0.003, color: "#cc5075", softness: 0, opacity: 1, finish: 0.4,
     }, [[[0.5, 0.5]]]));
-    const old = value(appendStroke(newLook(), seed));
+    const old = value(decodeLook({ ...newLook(), strokes: [seed] }));
     const base = composePaint(old.strokes, input);
     const brush = defaultBrush("blend");
     let session: Session = step(createSession(old), { type: "brush", brush });
@@ -523,7 +465,7 @@ describe("tagged pointer Blend without a browser", () => {
     portrait.present(presentSession(session));
     canvas.pointer("pointerdown");
     tick();
-    const expectedPreview = paintStroke(base, value(captureStroke("expected", brush, [[[0.5, 0.5]]], "soften-v1")), input);
+    const expectedPreview = paintStroke(base, value(captureStroke("expected", brush, [[[0.5, 0.5]]])), input);
     expectPixels(displayed(), expectedPreview);
     expect(pixel(displayed(), 511, 511)[3]!).toBeLessThan(255);
     canvas.pointer("pointercancel");
@@ -541,7 +483,7 @@ describe("tagged pointer Blend without a browser", () => {
     expectPixels(displayed(), final);
     dispatch({ type: "undo" });
     expectPixels(displayed(), base);
-    expect(presentSession(session).look.version).toBe(1);
+    expect(presentSession(session).look.version).toBe(2);
     dispatch({ type: "brush", brush: { ...brush, opacity: 0 } });
     canvas.pointer("pointerdown");
     canvas.pointer("pointerup", 510);

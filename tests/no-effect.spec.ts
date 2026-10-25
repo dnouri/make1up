@@ -96,26 +96,28 @@ async function expectNoHistory(page: Page): Promise<void> {
   await expect(page.getByRole("button", { name: "Undo last edit", exact: true })).toBeDisabled();
 }
 
-test("D1 forehead blush in Eyes changes neither PNG nor history, while the same brush paints cheeks", async ({ page }, info) => {
+test("forehead lipstick in Eyes changes neither PNG nor history, while the same brush paints lips", async ({ page }, info) => {
   await openStudio(page);
+  await page.getByRole("button", { name: "Lipstick", exact: true }).click();
   await page.getByRole("button", { name: "Eyes", exact: true }).click();
   await page.getByRole("button", { name: "Ink color", exact: true }).click();
   await rangeEnd(page, "Opacity", "End");
   await rangeEnd(page, "Softness", "Home");
   const before = await png(page, info, "bare-before.png");
-  await draw(page, info, "forehead-blush", "eyes", [-0.018, 0.365], [0.019, 0.365]);
+  await draw(page, info, "forehead-lipstick", "eyes", [-0.018, 0.365], [0.019, 0.365]);
+  await expect(page.locator("#app-status")).toHaveText("Lipstick changed no makeup on the lips.");
   const after = await png(page, info, "forehead-after.png");
-  expect(samePNG(after, before), "The original forehead attempt leaves every exported PNG byte unchanged").toBe(true);
+  expect(samePNG(after, before), "Forehead lipstick leaves every exported PNG byte unchanged").toBe(true);
   await expectNoHistory(page);
 
   await page.getByRole("button", { name: "Face", exact: true }).click();
-  await draw(page, info, "positive-cheek", "face", [0.065, 0.252], [0.08, 0.252]);
+  await draw(page, info, "positive-lips", "face", [-0.018, 0.211], [0.019, 0.211]);
   await expect(page.locator("#gesture-count")).toHaveText("1 gesture");
-  const painted = await png(page, info, "cheek-painted.png");
-  expect(samePNG(painted, before), "The same brush visibly paints cheeks").toBe(false);
+  const painted = await png(page, info, "lips-painted.png");
+  expect(samePNG(painted, before), "The same brush visibly paints lips").toBe(false);
 });
 
-test("D1 forehead blush after Undo preserves the bare PNG and Redo restores the exact cheek paint", async ({ page }, info) => {
+test("forehead lipstick after Undo preserves the bare PNG and Redo restores the exact cheek paint", async ({ page }, info) => {
   await openStudio(page);
   await page.getByRole("button", { name: "Ink color", exact: true }).click();
   await rangeEnd(page, "Opacity", "End");
@@ -128,6 +130,7 @@ test("D1 forehead blush after Undo preserves the bare PNG and Redo restores the 
   await page.getByRole("button", { name: "Undo last edit", exact: true }).click();
   await expectNoHistory(page);
   await expect(page.getByRole("button", { name: "Redo last edit", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Lipstick", exact: true }).click();
   await page.getByRole("button", { name: "Eyes", exact: true }).click();
   await draw(page, info, "forehead-after-undo", "eyes", [-0.018, 0.365], [0.019, 0.365]);
   await expectNoHistory(page);
@@ -137,6 +140,29 @@ test("D1 forehead blush after Undo preserves the bare PNG and Redo restores the 
   await expect(page.locator("#gesture-count")).toHaveText("1 gesture");
   expect(samePNG(await png(page, info, "cheek-redo.png"), painted), "Redo restores every painted PNG byte").toBe(true);
 });
+
+for (const tool of ["Blush", "Eyeshadow"]) {
+  test(`${tool} paints the forehead with exact Undo and Redo export bytes`, async ({ page }, info) => {
+    await openStudio(page);
+    await page.getByRole("button", { name: tool, exact: true }).click();
+    await page.getByRole("button", { name: "Eyes", exact: true }).click();
+    await page.getByRole("button", { name: "Ink color", exact: true }).click();
+    await rangeEnd(page, "Opacity", "End");
+    await rangeEnd(page, "Softness", "Home");
+    await expect(page.locator("#allowed-region")).toHaveText("Anywhere on the paintable face");
+    const before = await png(page, info, "full-face-before.png");
+    await draw(page, info, "forehead-color", "eyes", [-0.018, 0.365], [0.019, 0.365]);
+    await expect(page.locator("#gesture-count")).toHaveText("1 gesture");
+    const painted = await png(page, info, "full-face-painted.png");
+    expect(samePNG(painted, before), `${tool} visibly paints outside its historical region`).toBe(false);
+    await page.getByRole("button", { name: "Undo last edit", exact: true }).click();
+    await expectNoHistory(page);
+    expect(samePNG(await png(page, info, "full-face-undone.png"), before)).toBe(true);
+    await page.getByRole("button", { name: "Redo last edit", exact: true }).click();
+    await expect(page.locator("#gesture-count")).toHaveText("1 gesture");
+    expect(samePNG(await png(page, info, "full-face-redone.png"), painted)).toBe(true);
+  });
+}
 
 test("zero-opacity pointer and Guided apply add no history or success, then one guided gesture undoes and redoes", async ({ page }, info) => {
   await openStudio(page);

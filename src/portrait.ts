@@ -1,5 +1,5 @@
 import {
-  ACESFilmicToneMapping, Color, DataTexture, DirectionalLight, Group, HemisphereLight,
+  ACESFilmicToneMapping, DataTexture, DirectionalLight, Group, HemisphereLight,
   LinearFilter, Mesh, MeshStandardMaterial, NoColorSpace, OrthographicCamera,
   PMREMGenerator, Raycaster, RedFormat, RGBAFormat, Scene, SRGBColorSpace, Texture,
   TextureLoader, UnsignedByteType, Vector2, Vector3, Vector4, WebGLRenderer,
@@ -7,14 +7,24 @@ import {
 import type { BufferGeometry, Intersection, Material, WebGLRenderTarget } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { captureStroke, catalog, defaultBrush, limits, newLook, regions, tools } from "./look";
-import type { Brush, Identity, Look, Stroke, UV } from "./look";
+import { captureStroke, defaultBrush, limits, newLook, regions, toolRegion, tools } from "./look";
+import type { Brush, Look, Stroke, UV } from "./look";
+import { avatarChoices, shapeFields } from "./avatar";
+import type { AvatarIdentity } from "./avatar";
+import { appearanceMaps } from "./appearance";
+import type { AppearanceMaps, AppearanceRequest } from "./appearance";
 import { analyzePaint, beginStroke, composePaint, createPaintMasks, paintStroke } from "./paint";
 import type { ChangedPaint, PaintAnalysis, PaintField, PaintMasks, StrokeTransaction } from "./paint";
 import { indexPortrait } from "./picking";
-import type { Framing, PortraitPresentation } from "./session";
+import type { PortraitPicking } from "./picking";
+import type { Framing, PortraitPresentation, Workspace } from "./session";
+
+export type AppearanceAvailability = Readonly<{ kind: "ready" | "loading" }>
+  | Readonly<{ kind: "error"; message: string }>;
 
 export interface Portrait {
+  readonly availability: AppearanceAvailability;
+  retryAppearance(): void;
   applyStroke(stroke: Stroke): boolean;
   present(presentation: PortraitPresentation): void;
   analyze(): PaintAnalysis;
@@ -28,13 +38,13 @@ type PaintGesture = {
   pointerId: number;
   id: string;
   brush: Brush;
-  algorithm: Stroke["algorithm"];
   paths: UV[][];
   activePaths: [number | null, number | null];
   points: number;
   dirty: boolean;
   paint: StrokeTransaction;
 };
+type CameraView = { framing: Framing; yaw: number; pitch: number; zoom: number };
 type PendingPaint = Readonly<{ before: Look; candidate: ChangedPaint }>;
 type Gesture = { kind: "idle" }
   | PaintGesture
@@ -51,7 +61,7 @@ const maxPitch = 12 * Math.PI / 180;
 const maskSize = 1024;
 
 async function readMask(name: string): Promise<Uint8Array> {
-  const response = await fetch(`${import.meta.env.BASE_URL}face/v1/masks/${name}.png`);
+  const response = await fetch(`${import.meta.env.BASE_URL}face/v2/masks/${name}.png`);
   if (!response.ok) throw new Error(`The portrait mask ${name} could not load.`);
   const bitmap = await createImageBitmap(await response.blob(), {
     colorSpaceConversion: "none", premultiplyAlpha: "none", imageOrientation: "none",
@@ -163,6 +173,7 @@ export async function mountPortrait(
   canvas: HTMLCanvasElement,
   onStroke: (stroke: Stroke) => void,
   onError: (message: string) => void,
+  onAvailability: (state: AppearanceAvailability) => void = () => {},
 ): Promise<Portrait> {
   const renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "high-performance" });
   renderer.outputColorSpace = SRGBColorSpace;
@@ -183,7 +194,8 @@ export async function mountPortrait(
   const listeners = new AbortController();
   const originalStyle = { cursor: canvas.style.cursor, touchAction: canvas.style.touchAction };
   let environment: WebGLRenderTarget | null = null;
-  let releasePicking: (() => void) | null = null;
+  let releasePicking: PortraitPicking | null = null;
+  let appearanceLoader: ReturnType<typeof appearanceMaps> | null = null;
   let observer: ResizeObserver | null = null;
   let animation = 0;
   let disposed = false;
@@ -196,6 +208,7 @@ export async function mountPortrait(
     observer?.disconnect();
     canvas.style.cursor = originalStyle.cursor;
     canvas.style.touchAction = originalStyle.touchAction;
+    appearanceLoader?.dispose();
     const bitmaps = new Set<ImageBitmap>();
     for (const texture of textures) {
       if (typeof ImageBitmap !== "undefined" && texture.image instanceof ImageBitmap) bitmaps.add(texture.image);
@@ -212,7 +225,7 @@ export async function mountPortrait(
   }
 
   try {
-    const gltf = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}face/v1/head.glb`);
+    const gltf = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}face/v2/head.glb`);
     offset.add(gltf.scene);
     const meshes = new Map<string, Mesh>();
     gltf.scene.traverse((object) => {
@@ -238,27 +251,29 @@ export async function mountPortrait(
     const skin = materialOf(face);
     const bustSkin = materialOf(requireMesh("Bust"));
     const eyeMaterials = new Set([materialOf(requireMesh("Eye.L")), materialOf(requireMesh("Eye.R"))]);
-    const hairNames = ["Hair", "HairSweep", "HairTail", "HairTie"] as const;
-    const hairMaterials = new Set(hairNames.filter((name) => name !== "HairTie")
-      .map((name) => materialOf(requireMesh(name))));
-    const sourceColors = new Map([...materials].filter((material) => material instanceof MeshStandardMaterial)
-      .map((material) => [material, material.color.clone()]));
-    const blueMap = materialOf(requireMesh("Eye.L")).map;
-    if (blueMap === null) throw new Error("The portrait has no iris texture.");
+    const hairNames = [...new Set(Object.values(avatarChoices.hairStyle).flatMap((style) => style.components))];
+    const hairMaterials = new Set(hairNames.map((name) => materialOf(requireMesh(name)))
+      .filter((material) => material.map !== null));
+    const brows = materialOf(requireMesh("Brows"));
+    const lashes = requireMesh("Lashes");
+    function requireMap(material: MeshStandardMaterial): Texture {
+      if (material.map === null) throw new Error(`The portrait has no map for ${material.name}.`);
+      return material.map;
+    }
+    const embedded: AppearanceMaps = {
+      face: requireMap(skin), bust: requireMap(bustSkin), hair: requireMap(materialOf(requireMesh("Hair"))),
+      eyes: requireMap(materialOf(requireMesh("Eye.L"))),
+    };
     const textureLoader = new TextureLoader();
-    async function loadEye(id: "hazel" | "olive"): Promise<Texture> {
-      const texture = await textureLoader.loadAsync(`${import.meta.env.BASE_URL}${catalog.eyes[id].texture.slice(1)}`);
-      if (disposed) {
-        texture.dispose();
-        throw new Error("Portrait loading stopped.");
-      }
+    const maps = appearanceMaps(embedded, async (path) => {
+      const texture = await textureLoader.loadAsync(`${import.meta.env.BASE_URL}face/v2/${path}`);
       texture.flipY = false;
       texture.colorSpace = SRGBColorSpace;
-      textures.add(texture);
+      texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
       return texture;
-    }
-    const [masks, hazelMap, oliveMap] = await Promise.all([loadMasks(), loadEye("hazel"), loadEye("olive")]);
-    const eyeMaps = { blue: blueMap, hazel: hazelMap, olive: oliveMap };
+    });
+    appearanceLoader = maps;
+    const masks = await loadMasks();
     for (const texture of textures) texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
 
     function rebuildEnvironment(): void {
@@ -284,7 +299,7 @@ export async function mountPortrait(
     for (const material of hairMaterials) material.roughness = 0.66;
 
     let presentation: PortraitPresentation = {
-      look: newLook(), brush: defaultBrush(), navigation: "paint", framing: "face", readonly: false,
+      look: newLook(), brush: defaultBrush(), workspace: "makeup", navigation: "paint", framing: "face", readonly: false,
     };
     let committed = composePaint([], masks);
     let displayed = committed;
@@ -297,12 +312,17 @@ export async function mountPortrait(
     installPaintMaterial(skin, pigment, finish, cursor, mirrorCursor);
     let gesture: Gesture = { kind: "idle" };
     let pendingPaint: PendingPaint | null = null;
+    let availability: AppearanceAvailability = { kind: "ready" };
+    let requested: AppearanceRequest | null = null;
+    let live: { identity: AvatarIdentity; maps: AppearanceMaps; request: AppearanceRequest } | null = null;
     let dirty = true;
     let contextLost = false;
     let hovered = false;
-    let yaw = 0;
-    let pitch = 0;
-    let zoom = 1;
+    const views: Record<Workspace, CameraView> = {
+      makeup: { framing: "face", yaw: 0, pitch: 0, zoom: 1 },
+      customize: { framing: "face", yaw: 0, pitch: 0, zoom: 1 },
+    };
+    let view = views.makeup;
     let width = 1;
     let height = 1;
     let floatTime = 0;
@@ -325,19 +345,62 @@ export async function mountPortrait(
       dirty = true;
     }
 
-    function applyIdentity(identity: Identity): void {
-      for (const material of [skin, bustSkin]) {
-        material.color.copy(sourceColors.get(material) ?? new Color(0xffffff))
-          .multiply(new Color(catalog.complexions[identity.complexion].tint));
+    function applyIdentity(identity: AvatarIdentity, selected: AppearanceMaps): void {
+      for (const mesh of [face, lashes]) mesh.morphTargetInfluences?.fill(0);
+      for (const field of shapeFields) {
+        const choices: Readonly<Record<string, { morphs: Readonly<Record<string, number>> }>> = avatarChoices[field];
+        for (const [target, weight] of Object.entries(choices[identity[field]]!.morphs)) {
+          for (const mesh of [face, lashes]) {
+            const index = mesh.morphTargetDictionary?.[target];
+            if (index !== undefined && mesh.morphTargetInfluences !== undefined) mesh.morphTargetInfluences[index] = weight;
+          }
+        }
       }
-      for (const material of hairMaterials) {
-        material.color.copy(sourceColors.get(material) ?? new Color(0xffffff))
-          .multiply(new Color(catalog.hairColors[identity.hairColor].tint));
-      }
-      for (const material of eyeMaterials) material.map = eyeMaps[identity.eyes];
-      const visible: readonly string[] = catalog.hairStyles[identity.hairStyle].visible;
+      skin.map = selected.face;
+      bustSkin.map = selected.bust;
+      for (const material of hairMaterials) material.map = selected.hair;
+      const [red, green, blue] = avatarChoices.hairColor[identity.hairColor].browLinear;
+      brows.color.setRGB(red!, green!, blue!);
+      for (const material of eyeMaterials) material.map = selected.eyes;
+      const visible: readonly string[] = avatarChoices.hairStyle[identity.hairStyle].components;
       for (const name of hairNames) requireMesh(name).visible = visible.includes(name);
+      releasePicking!.refit();
       dirty = true;
+    }
+
+    function setAvailability(state: AppearanceAvailability): void {
+      availability = state;
+      if (state.kind !== "ready") {
+        cancelGesture();
+        hideCursor();
+      }
+      refreshCursorStyle();
+      onAvailability(state);
+    }
+
+    function requestIdentity(): void {
+      requested?.release();
+      const identity = presentation.look.identity;
+      const request = maps.request(identity);
+      requested = request;
+      function accept(selected: AppearanceMaps): void {
+        if (disposed || requested !== request) return;
+        applyIdentity(identity, selected);
+        live?.request.release();
+        live = { identity, maps: selected, request };
+        requested = null;
+        setAvailability({ kind: "ready" });
+      }
+      if (request.maps !== null) accept(request.maps);
+      else setAvailability({ kind: "loading" });
+      void request.ready.then((selected) => {
+        if (requested === request) accept(selected);
+      }).catch(() => {
+        if (disposed || requested !== request) return;
+        request.release();
+        requested = null;
+        setAvailability({ kind: "error", message: "The selected portrait colors could not load. Check your connection and try again." });
+      });
     }
 
     function frameCamera(framing: Framing, aspect: number, magnification: number): void {
@@ -365,7 +428,7 @@ export async function mountPortrait(
     function refreshCursorStyle(): void {
       canvas.style.cursor = presentation.navigation === "turn"
         ? gesture.kind === "turn" ? "grabbing" : "grab"
-        : presentation.readonly ? "default" : "crosshair";
+        : availability.kind === "loading" ? "wait" : availability.kind !== "ready" || presentation.readonly ? "default" : "crosshair";
     }
 
     function cancelGesture(): void {
@@ -380,13 +443,13 @@ export async function mountPortrait(
     }
 
     function applyStroke(stroke: Stroke): boolean {
-      if (disposed || contextLost || presentation.readonly || presentation.navigation !== "paint") return false;
+      if (disposed || contextLost || availability.kind !== "ready" || presentation.readonly || presentation.navigation !== "paint") return false;
       const paint = gesture.kind === "paint" ? gesture.paint : beginStroke(committed, masks);
       cancelGesture();
       const candidate = paint.finish(stroke);
       if (candidate.kind === "unchanged") {
         const tool = tools[stroke.brush.tool];
-        onError(`${tool.label} changed no makeup on the ${regions[tool.region].label.toLowerCase()}.`);
+        onError(`${tool.label} changed no makeup on the ${regions[toolRegion(stroke.brush.tool)].label.toLowerCase()}.`);
         return false;
       }
       const previousLook = presentation.look;
@@ -411,7 +474,7 @@ export async function mountPortrait(
       height = nextHeight;
       renderer.setPixelRatio(dpr);
       renderer.setSize(width, height, false);
-      frameCamera(presentation.framing, width / height, zoom);
+      frameCamera(view.framing, width / height, view.zoom);
     }
 
     function nearestFace(): Intersection | null {
@@ -498,7 +561,7 @@ export async function mountPortrait(
 
     function pointerDown(event: PointerEvent): void {
       if (disposed || contextLost || event.button !== 0 || !event.isPrimary || gesture.kind !== "idle") return;
-      if (presentation.readonly && presentation.navigation === "paint") return;
+      if ((presentation.readonly || availability.kind !== "ready") && presentation.navigation === "paint") return;
       event.preventDefault();
       hovered = true;
       canvas.setPointerCapture(event.pointerId);
@@ -508,7 +571,6 @@ export async function mountPortrait(
       } else {
         gesture = {
           kind: "paint", pointerId: event.pointerId, id: crypto.randomUUID(), brush: presentation.brush,
-          algorithm: presentation.brush.tool === "blend" ? "soften-v1" : undefined,
           paths: [], activePaths: [null, null], points: 0, dirty: false, paint: beginStroke(committed, masks),
         };
         sample(event, gesture);
@@ -517,16 +579,16 @@ export async function mountPortrait(
     }
 
     function pointerMove(event: PointerEvent): void {
-      if (disposed || contextLost || (presentation.readonly && presentation.navigation === "paint")) return;
+      if (disposed || contextLost || ((presentation.readonly || availability.kind !== "ready") && presentation.navigation === "paint")) return;
       hovered = true;
       if (gesture.kind !== "idle" && event.pointerId !== gesture.pointerId) return;
       if (gesture.kind === "turn") {
         event.preventDefault();
-        yaw = Math.max(-maxYaw, Math.min(maxYaw, yaw + (event.clientX - gesture.x) * 0.005));
-        pitch = Math.max(-maxPitch, Math.min(maxPitch, pitch + (event.clientY - gesture.y) * 0.004));
+        view.yaw = Math.max(-maxYaw, Math.min(maxYaw, view.yaw + (event.clientX - gesture.x) * 0.005));
+        view.pitch = Math.max(-maxPitch, Math.min(maxPitch, view.pitch + (event.clientY - gesture.y) * 0.004));
         gesture.x = event.clientX;
         gesture.y = event.clientY;
-        pivot.rotation.set(pitch, yaw, 0, "YXZ");
+        pivot.rotation.set(view.pitch, view.yaw, 0, "YXZ");
         dirty = true;
       } else if (presentation.navigation === "paint") {
         const draft = gesture.kind === "paint" ? gesture : null;
@@ -550,7 +612,7 @@ export async function mountPortrait(
         cancelGesture();
         return;
       }
-      const stroke = captureStroke(completed.id, completed.brush, completed.paths, completed.algorithm);
+      const stroke = captureStroke(completed.id, completed.brush, completed.paths);
       if (stroke.ok) applyStroke(stroke.value);
       else {
         cancelGesture();
@@ -566,7 +628,7 @@ export async function mountPortrait(
     function present(next: PortraitPresentation): void {
       if (disposed) return;
       const previous = presentation;
-      if (next.look !== previous.look || next.readonly !== previous.readonly
+      if (next.look !== previous.look || next.readonly !== previous.readonly || next.workspace !== previous.workspace
         || next.navigation !== previous.navigation || next.framing !== previous.framing
         || !sameBrush(next.brush, previous.brush)) cancelGesture();
       if (next.look.strokes !== previous.look.strokes) {
@@ -584,13 +646,18 @@ export async function mountPortrait(
         showField(committed);
       }
       presentation = next;
-      if (next.look.identity !== previous.look.identity) applyIdentity(next.look.identity);
-      if (next.framing !== previous.framing || next.readonly !== previous.readonly) {
-        yaw = 0;
-        pitch = 0;
-        zoom = 1;
-        pivot.rotation.set(0, 0, 0);
-        frameCamera(next.framing, width / height, zoom);
+      if (next.look.identity !== previous.look.identity) requestIdentity();
+      view = views[next.workspace];
+      const framingChanged = view.framing !== next.framing;
+      if (framingChanged) {
+        view.framing = next.framing;
+        view.yaw = 0;
+        view.pitch = 0;
+        view.zoom = 1;
+      }
+      if (next.workspace !== previous.workspace || framingChanged) {
+        pivot.rotation.set(view.pitch, view.yaw, 0, "YXZ");
+        frameCamera(view.framing, width / height, view.zoom);
       }
       if (next.readonly || next.navigation !== "paint") hideCursor();
       refreshCursorStyle();
@@ -599,6 +666,18 @@ export async function mountPortrait(
 
     async function capture(look: Look): Promise<Blob> {
       if (disposed || contextLost) throw new Error("The portrait is not available for export.");
+      if (availability.kind !== "ready") throw new Error("Wait for the current portrait appearance before exporting.");
+      const request = maps.request(look.identity);
+      try {
+        const selected = await request.ready;
+        if (disposed || contextLost || availability.kind !== "ready") throw new Error("The portrait appearance changed during export. Try again.");
+        return await captureReady(look, selected);
+      } finally {
+        request.release();
+      }
+    }
+
+    function captureReady(look: Look, selected: AppearanceMaps): Promise<Blob> {
       const output = document.createElement("canvas");
       output.width = 1080;
       output.height = 1350;
@@ -613,7 +692,7 @@ export async function mountPortrait(
       const pixelRatio = renderer.getPixelRatio();
       const renderSize = renderer.getSize(new Vector2());
       try {
-        applyIdentity(look.identity);
+        applyIdentity(look.identity, selected);
         showField(look.strokes === presentation.look.strokes ? committed : composePaint(look.strokes, masks));
         hideCursor();
         pivot.position.set(0, pivotHeight, 0);
@@ -629,7 +708,7 @@ export async function mountPortrait(
         context.fillRect(0, 0, output.width, output.height);
         context.drawImage(canvas, 0, 0);
       } finally {
-        applyIdentity(presentation.look.identity);
+        if (live !== null) applyIdentity(live.identity, live.maps);
         showField(savedField);
         cursor.copy(savedCursor);
         mirrorCursor.copy(savedMirrorCursor);
@@ -660,7 +739,7 @@ export async function mountPortrait(
         if (gesture.kind === "paint" && gesture.dirty) {
           gesture.dirty = false;
           if (gesture.points > 0) {
-            const draft = captureStroke(gesture.id, gesture.brush, gesture.paths, gesture.algorithm);
+            const draft = captureStroke(gesture.id, gesture.brush, gesture.paths);
             if (draft.ok) {
               const preview = gesture.paint.update(draft.value);
               if (preview !== null) showField(preview);
@@ -716,7 +795,7 @@ export async function mountPortrait(
     }, options);
     observer = new ResizeObserver(resize);
     observer.observe(canvas);
-    applyIdentity(presentation.look.identity);
+    requestIdentity();
     resize();
     refreshCursorStyle();
     if (renderer.extensions.has("KHR_parallel_shader_compile")) await renderer.compileAsync(scene, camera);
@@ -725,9 +804,12 @@ export async function mountPortrait(
     animation = requestAnimationFrame(tick);
 
     return {
+      get availability() { return availability; },
+      retryAppearance() { if (!disposed) requestIdentity(); },
       applyStroke,
       present,
       analyze() {
+        if (disposed || contextLost || availability.kind !== "ready") throw new Error("Wait for the current portrait appearance before finishing.");
         if (lastAnalysis === null) lastAnalysis = analyzePaint(committed, masks);
         return lastAnalysis;
       },
@@ -735,8 +817,8 @@ export async function mountPortrait(
       zoom(direction) {
         if (disposed) return;
         cancelGesture();
-        zoom = Math.max(1, Math.min(1.7, zoom * (direction === "in" ? 1.13 : 1 / 1.13)));
-        frameCamera(presentation.framing, width / height, zoom);
+        view.zoom = Math.max(1, Math.min(1.7, view.zoom * (direction === "in" ? 1.13 : 1 / 1.13)));
+        frameCamera(view.framing, width / height, view.zoom);
       },
       dispose() {
         if (disposed) return;

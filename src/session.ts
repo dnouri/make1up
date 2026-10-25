@@ -1,5 +1,6 @@
 import { appendStroke, clearMakeup, defaultBrush, encodeLook, limits, newLook, withIdentity } from "./look";
-import type { Brush, Identity, Look, Result, Stroke, ThemeId } from "./look";
+import type { Brush, Look, Result, Stroke, ThemeId } from "./look";
+import type { AvatarIdentity } from "./avatar";
 import { assess } from "./paint";
 import type { Critique, PaintAnalysis } from "./paint";
 
@@ -8,6 +9,7 @@ export type Mode =
   | Readonly<{ kind: "challenge"; theme: ThemeId; deadline: number | null }>;
 export type Framing = "face" | "eyes" | "lips";
 export type Navigation = "paint" | "turn";
+export type Workspace = "makeup" | "customize";
 export type History = Readonly<{
   past: readonly Look[];
   current: Look;
@@ -23,6 +25,7 @@ export type EditingSession = Readonly<{
   mode: Mode;
   history: History;
   brush: Brush;
+  workspace: Workspace;
   navigation: Navigation;
   framing: Framing;
   notice: string | null;
@@ -34,11 +37,12 @@ export type Session = EditingSession
 export type Action =
   | Readonly<{ type: "start"; look: Look; mode: Mode }>
   | Readonly<{ type: "stroke"; stroke: Stroke }>
-  | Readonly<{ type: "identity"; identity: Identity }>
+  | Readonly<{ type: "identity"; identity: AvatarIdentity }>
   | Readonly<{ type: "load"; look: Look }>
   | Readonly<{ type: "brush"; brush: Brush }>
   | Readonly<{ type: "navigate"; navigation: Navigation }>
   | Readonly<{ type: "frame"; framing: Framing }>
+  | Readonly<{ type: "workspace"; workspace: Workspace }>
   | Readonly<{ type: "undo" | "redo" | "clearConfirmed" | "dismissNotice" }>
   | Readonly<{ type: "inputRejected"; message: string }>
   | Readonly<{ type: "finish"; id: string; analysis: PaintAnalysis }>
@@ -47,6 +51,7 @@ export type Action =
 export type PortraitPresentation = Readonly<{
   look: Look;
   brush: Brush;
+  workspace: Workspace;
   navigation: Navigation;
   framing: Framing;
   readonly: boolean;
@@ -59,7 +64,7 @@ export function createSession(
   return Object.freeze({
     phase: "editing", mode: Object.freeze({ ...mode }),
     history: Object.freeze({ past: Object.freeze([]), current: look, future: Object.freeze([]) }),
-    brush: defaultBrush(), navigation: "paint", framing: "face", notice: null,
+    brush: defaultBrush(), workspace: "makeup", navigation: "paint", framing: "face", notice: null,
   });
 }
 
@@ -90,19 +95,21 @@ export function step(session: Session, action: Action): Session {
   if (session.phase !== "editing") return session;
   switch (action.type) {
     case "stroke":
-      return session.navigation === "paint"
+      return session.workspace === "makeup" && session.navigation === "paint"
         ? applyLookResult(session, appendStroke(session.history.current, action.stroke))
         : session;
     case "identity":
       return recordEdit(session, withIdentity(session.history.current, action.identity));
     case "load":
       return recordEdit(session, action.look);
+    case "workspace":
+      return session.workspace === action.workspace ? session : Object.freeze({ ...session, workspace: action.workspace });
     case "brush":
-      return Object.freeze({ ...session, brush: action.brush, notice: null });
+      return session.workspace === "makeup" ? Object.freeze({ ...session, brush: action.brush, notice: null }) : session;
     case "navigate":
-      return Object.freeze({ ...session, navigation: action.navigation });
+      return session.workspace === "makeup" ? Object.freeze({ ...session, navigation: action.navigation }) : session;
     case "frame":
-      return Object.freeze({ ...session, framing: action.framing });
+      return session.workspace === "makeup" ? Object.freeze({ ...session, framing: action.framing }) : session;
     case "inputRejected":
       return Object.freeze({ ...session, notice: action.message });
     case "dismissNotice":
@@ -148,10 +155,12 @@ export function step(session: Session, action: Action): Session {
 export function presentSession(session: Session): PortraitPresentation {
   return session.phase === "editing"
     ? Object.freeze({
-      look: session.history.current, brush: session.brush, navigation: session.navigation,
-      framing: session.framing, readonly: false,
+      look: session.history.current, brush: session.brush, workspace: session.workspace,
+      navigation: session.workspace === "customize" ? "turn" : session.navigation,
+      framing: session.workspace === "customize" ? "face" : session.framing,
+      readonly: session.workspace === "customize",
     })
     : Object.freeze({
-      look: session.submission.look, brush: defaultBrush(), navigation: "turn", framing: "face", readonly: true,
+      look: session.submission.look, brush: defaultBrush(), workspace: "makeup", navigation: "turn", framing: "face", readonly: true,
     });
 }

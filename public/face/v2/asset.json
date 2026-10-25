@@ -1,0 +1,504 @@
+{
+  "id": "rain-portrait-v2",
+  "status": "generated runtime asset",
+  "registrySha256": "9449ca5f350b62889abf5839cd3122dbfa13aab7c50d399e613eadd90a103064",
+  "glb": {
+    "file": "head.glb",
+    "sha256": "dcaac6319474abdf51ca2224e95d367278b7199312f3e89714601d8b7b6cb1de",
+    "bytes": 10562028,
+    "preservedNeutralBinaryPrefixBytes": 4776588
+  },
+  "source": {
+    "blend": "tmp/asset-research/assets/Rain v3.3/rain_v3.2.blend",
+    "archive": "tmp/asset-research/assets/rain-v33.zip",
+    "archiveSha256": "80217f163f6392dc829233d63c2cfb5e1376775bc34101ad14f39631fea70d24",
+    "neutral": "art/neutral/head.glb",
+    "license": "CC-BY-4.0",
+    "credit": "Rain Rig (CC) Blender Foundation | studio.blender.org"
+  },
+  "sourceBlendSha256": "831ab6d837c679040285862b15dc9ee5180b018442a88aeaf92aaa7509b80258",
+  "generatorSha256": "dc45b0c70a590334e6cc605e59847c90a2d480c6705fe2580de0a887493c06f4",
+  "paintAtlas": {
+    "id": "rain-front-v1",
+    "directory": ".",
+    "publicPath": "/face/v2/",
+    "paint": {
+      "mesh": "Face",
+      "baseAttribute": "uv / TEXCOORD_0",
+      "paintAttribute": "uv1 / TEXCOORD_1",
+      "blenderLayer": "MakeupFrontUV",
+      "projection": {
+        "xMin": -0.15,
+        "xMax": 0.15,
+        "yMin": 0.15,
+        "yMax": 0.445
+      },
+      "formula": "u=(localX+0.15)/0.30; v=(0.445-localY)/0.295 on eligible polygons",
+      "convention": "Exported GLB v increases downward. Three.js canvas textures must use flipY=false. Canvas pixel=(u*width,v*height).",
+      "eligibility": "Only front-visible head polygons in the portrait area receive projected UVs. Rear, hidden and out-of-range polygons have constant exported UV (0,0).",
+      "sentinel": [
+        0,
+        0
+      ],
+      "reservedBorderPixels": 3,
+      "rearProtection": "Keep the paint texture border transparent. Multiply paint alpha by masks/paint-valid.png sampled with uv1. Never regenerate UVs from every vertex position without eligibility.",
+      "layers": "Composite makeup after base color sampling. Never draw into skin-base.png or replace TEXCOORD_0.",
+      "finish": "Use a separate roughness/finish blend for gloss. Base roughness is 0.56; color alone is not gloss.",
+      "maskChannel": "red",
+      "maskColorSpace": "NoColorSpace",
+      "textureSize": 1024,
+      "masks": {
+        "paint-valid": "masks/paint-valid.png",
+        "lips": "masks/lips.png",
+        "cheek-left": "masks/cheek-left.png",
+        "cheek-right": "masks/cheek-right.png",
+        "eyelid-left": "masks/eyelid-left.png",
+        "eyelid-right": "masks/eyelid-right.png"
+      },
+      "maskPixelsAboveHalf": {
+        "paint-valid": 564646,
+        "lips": 14438,
+        "cheek-left": 10510,
+        "cheek-right": 10510,
+        "eyelid-left": 7673,
+        "eyelid-right": 7673
+      },
+      "eligiblePolygons": 10840,
+      "maskLimits": "Lip mask follows the source color border. Cheek and eyelid masks are soft portrait guides, not anatomical segmentation. There are no expression variants."
+    },
+    "landmarks": {
+      "lipsCenter": {
+        "position": [
+          0.0,
+          0.209,
+          0.153776
+        ],
+        "paintUV": [
+          0.5,
+          0.8
+        ]
+      },
+      "lipsLeftCorner": {
+        "position": [
+          0.029,
+          0.21,
+          0.136708
+        ],
+        "paintUV": [
+          0.596667,
+          0.79661
+        ]
+      },
+      "lipsRightCorner": {
+        "position": [
+          -0.029,
+          0.21,
+          0.136706
+        ],
+        "paintUV": [
+          0.403333,
+          0.79661
+        ]
+      },
+      "cheekLeft": {
+        "position": [
+          0.07,
+          0.252,
+          0.124605
+        ],
+        "paintUV": [
+          0.733333,
+          0.654237
+        ]
+      },
+      "cheekRight": {
+        "position": [
+          -0.07,
+          0.252,
+          0.124605
+        ],
+        "paintUV": [
+          0.266667,
+          0.654237
+        ]
+      },
+      "upperLidLeft": {
+        "position": [
+          0.052,
+          0.314,
+          0.133989
+        ],
+        "paintUV": [
+          0.673333,
+          0.444068
+        ]
+      },
+      "upperLidRight": {
+        "position": [
+          -0.052,
+          0.314,
+          0.133989
+        ],
+        "paintUV": [
+          0.326667,
+          0.444068
+        ]
+      },
+      "forehead": {
+        "position": [
+          0.0,
+          0.37,
+          0.14746
+        ],
+        "paintUV": [
+          0.5,
+          0.254237
+        ]
+      },
+      "noseTip": {
+        "position": [
+          0.0,
+          0.25,
+          0.17173
+        ],
+        "paintUV": [
+          0.5,
+          0.661017
+        ]
+      },
+      "eyeLeftCenter": {
+        "position": [
+          0.0468,
+          0.2933,
+          0.0887
+        ],
+        "approximate": true
+      },
+      "eyeRightCenter": {
+        "position": [
+          -0.0468,
+          0.2933,
+          0.0887
+        ],
+        "approximate": true
+      }
+    },
+    "files": {
+      "makeup-blank.png": "008e64b67741be1277a1d4b940e8432ff749505861c8fa0842a6de76fd2c5f59",
+      "masks/paint-valid.png": "cafc7619cbbb0f120d6a5ae00003909924519c3181e8e709c64cbf0ee7653a13",
+      "masks/lips.png": "dd9884165a757e55c02d92e77420d0f10c4f5d524bf0b8cff1d7447a6996ad21",
+      "masks/cheek-left.png": "35132bbe000a16df8a5dfb9817f27865127eaa83d1ab2d247f0d0b47d2eba1ee",
+      "masks/cheek-right.png": "8a030a82319487e9915e3db7d49b7b7968123ca5dcdbc7f7fea74b1665d32135",
+      "masks/eyelid-left.png": "8bd7e29d2470a952c7888ff484d91ba913d69fa628bc049c0b08dbc7632b17c3",
+      "masks/eyelid-right.png": "91fd375346d358e2c5a39b56d7c856a4661f9df4e2a09d1e59504f13ec0b9001"
+    }
+  },
+  "meshes": {
+    "Face": {
+      "vertices": 30982,
+      "triangles": 50540,
+      "targets": [
+        "face-soft",
+        "face-angular",
+        "nose-broad",
+        "nose-rounded",
+        "mouth-full",
+        "mouth-wide",
+        "eyes-round"
+      ]
+    },
+    "Brows": {
+      "vertices": 1403,
+      "triangles": 2080,
+      "targets": []
+    },
+    "Lashes": {
+      "vertices": 1236,
+      "triangles": 1888,
+      "targets": [
+        "eyes-round"
+      ]
+    },
+    "Hair": {
+      "vertices": 10639,
+      "triangles": 15726,
+      "targets": []
+    },
+    "HairSweep": {
+      "vertices": 1773,
+      "triangles": 3144,
+      "targets": []
+    },
+    "HairTail": {
+      "vertices": 3552,
+      "triangles": 4552,
+      "targets": []
+    },
+    "HairTie": {
+      "vertices": 2336,
+      "triangles": 3840,
+      "targets": []
+    },
+    "Bust": {
+      "vertices": 6210,
+      "triangles": 10038,
+      "targets": []
+    },
+    "Top": {
+      "vertices": 4546,
+      "triangles": 7214,
+      "targets": []
+    },
+    "Eye.L": {
+      "vertices": 3320,
+      "triangles": 5576,
+      "targets": []
+    },
+    "Eye.R": {
+      "vertices": 3317,
+      "triangles": 5576,
+      "targets": []
+    },
+    "EyeHighlights": {
+      "vertices": 604,
+      "triangles": 896,
+      "targets": []
+    },
+    "HairBun": {
+      "vertices": 8322,
+      "triangles": 16640,
+      "targets": []
+    },
+    "BunBand": {
+      "vertices": 1152,
+      "triangles": 2304,
+      "targets": []
+    }
+  },
+  "triangles": 130014,
+  "targets": {
+    "face-soft": {
+      "Face": {
+        "vertices": 30982,
+        "movedVertices": 7888,
+        "maxDisplacementMeters": 0.004315470847390222
+      }
+    },
+    "face-angular": {
+      "Face": {
+        "vertices": 30982,
+        "movedVertices": 4567,
+        "maxDisplacementMeters": 0.006398625523809651
+      }
+    },
+    "nose-broad": {
+      "Face": {
+        "vertices": 30982,
+        "movedVertices": 3854,
+        "maxDisplacementMeters": 0.0040335396534759566
+      }
+    },
+    "nose-rounded": {
+      "Face": {
+        "vertices": 30982,
+        "movedVertices": 2831,
+        "maxDisplacementMeters": 0.0037681750220619316
+      }
+    },
+    "mouth-full": {
+      "Face": {
+        "vertices": 30982,
+        "movedVertices": 5054,
+        "maxDisplacementMeters": 0.0029203963564320115
+      }
+    },
+    "mouth-wide": {
+      "Face": {
+        "vertices": 30982,
+        "movedVertices": 3243,
+        "maxDisplacementMeters": 0.004455252156556061
+      }
+    },
+    "eyes-round": {
+      "Face": {
+        "vertices": 30982,
+        "movedVertices": 4012,
+        "maxDisplacementMeters": 0.0026023848130990986
+      },
+      "Lashes": {
+        "vertices": 1236,
+        "movedVertices": 1156,
+        "maxDisplacementMeters": 0.0024924571119273853
+      }
+    }
+  },
+  "maps": {
+    "maps/bust-brown.png": {
+      "bytes": 92507,
+      "sha256": "cfd588a648edcd10debb0d1638e54445805236843d1e03835653e741a8a10bf7",
+      "size": [
+        512,
+        512
+      ]
+    },
+    "maps/bust-deep.png": {
+      "bytes": 77404,
+      "sha256": "f7c77e5e1b5ff3121a6363f52dc0fd912007ef48823fcd8580d72205e0151ea4",
+      "size": [
+        512,
+        512
+      ]
+    },
+    "maps/bust-fair.png": {
+      "bytes": 128525,
+      "sha256": "e293a7e7b7995423aac5d906c9ba0acb1d418a90264426c132848765701093a5",
+      "size": [
+        512,
+        512
+      ]
+    },
+    "maps/bust-tan.png": {
+      "bytes": 100621,
+      "sha256": "bf9c230d4fda94e56583d0b36d122ae0e05641120895b2788cdbbd09509fd761",
+      "size": [
+        512,
+        512
+      ]
+    },
+    "maps/bust-warm.png": {
+      "bytes": 97280,
+      "sha256": "f0da9a8811503d94fc15f15640696090f29f17b65d1ffa1e2229789807366c5d",
+      "size": [
+        512,
+        512
+      ]
+    },
+    "maps/eyes-blue.png": {
+      "bytes": 102459,
+      "sha256": "24c8f4446c7014861a1bdbbe0ad49fbc552917ccd66de8abfe26ef60e291c58f",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    "maps/eyes-hazel.png": {
+      "bytes": 103242,
+      "sha256": "ac3fce389f873a779d0f35f19e0120d7f30b70d42a148db8f5dea135fdf5041c",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    "maps/eyes-olive.png": {
+      "bytes": 102758,
+      "sha256": "41b55977b0d41062423c34b84005e9e86b626762b7f30c6cdec659c27c388b01",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    "maps/hair-blonde.png": {
+      "bytes": 605918,
+      "sha256": "a0d1016662594423e9395585bdcb47fa967a9555e599fbbd502481513a266fa3",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    "maps/hair-chestnut.png": {
+      "bytes": 459881,
+      "sha256": "3d58bbfeec6e14edfbb10abef6d2b77a0a19ac7f59663a219d9bc78667fd7dc6",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    "maps/hair-espresso.png": {
+      "bytes": 607394,
+      "sha256": "1c38d4a32c4dd5bc8febd06ca5f72efada4fda3edf17286424f7b8119252907d",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    "maps/hair-plum.png": {
+      "bytes": 469030,
+      "sha256": "d3657e9cf39ef756e5c703ca993796e3f0a5307ce6016b7ef967102483adfdf9",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    "maps/skin-brown.png": {
+      "bytes": 746485,
+      "sha256": "068fddf0a77b1551426b96cad870e850facf55f7df074acf872d79954b2e33a5",
+      "size": [
+        2048,
+        2048
+      ]
+    },
+    "maps/skin-deep.png": {
+      "bytes": 622063,
+      "sha256": "fafcd90a12ca59b008aa635cced5f842ba9ae831b9ad9576b7a646e465556179",
+      "size": [
+        2048,
+        2048
+      ]
+    },
+    "maps/skin-fair.png": {
+      "bytes": 1104258,
+      "sha256": "a4873bc832a2f4894040e91e0ca3d8d01559399391bcca1ab33e9687371365a3",
+      "size": [
+        2048,
+        2048
+      ]
+    },
+    "maps/skin-tan.png": {
+      "bytes": 815555,
+      "sha256": "2e1f9d4f0dd484909f83e36d98031be6725d111caf48394d9975b455965084d5",
+      "size": [
+        2048,
+        2048
+      ]
+    },
+    "maps/skin-warm.png": {
+      "bytes": 817800,
+      "sha256": "91027cb7bde5363321381f6b18a834d5c0a3384ba2d74126c21acbab49552d71",
+      "size": [
+        2048,
+        2048
+      ]
+    }
+  },
+  "neutralAuthoringInputs": {
+    "art/neutral/asset.json": "5027c4840d2b72ee25feb6f9f51a02ee4b45a66092b0386d3fab5166ac95216a",
+    "art/neutral/bust-base.png": "f0da9a8811503d94fc15f15640696090f29f17b65d1ffa1e2229789807366c5d",
+    "art/neutral/eyes-blue.png": "24c8f4446c7014861a1bdbbe0ad49fbc552917ccd66de8abfe26ef60e291c58f",
+    "art/neutral/eyes-hazel.png": "ac3fce389f873a779d0f35f19e0120d7f30b70d42a148db8f5dea135fdf5041c",
+    "art/neutral/eyes-olive.png": "41b55977b0d41062423c34b84005e9e86b626762b7f30c6cdec659c27c388b01",
+    "art/neutral/hair-espresso.png": "1c38d4a32c4dd5bc8febd06ca5f72efada4fda3edf17286424f7b8119252907d",
+    "art/neutral/head.glb": "98c00f938a9a1b7e7badca8e2c4c2cae2d0b2d48f42830d2f40a5423d3a0f861",
+    "art/neutral/licenses/CC-BY-4.0.txt": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411",
+    "art/neutral/licenses/Rain-embedded-readme.txt": "fc36812fc3114f0ba6e234a4761acc633746df99160b0df1b6ee47e1d89a151b",
+    "art/neutral/makeup-blank.png": "008e64b67741be1277a1d4b940e8432ff749505861c8fa0842a6de76fd2c5f59",
+    "art/neutral/masks/cheek-left.png": "35132bbe000a16df8a5dfb9817f27865127eaa83d1ab2d247f0d0b47d2eba1ee",
+    "art/neutral/masks/cheek-right.png": "8a030a82319487e9915e3db7d49b7b7968123ca5dcdbc7f7fea74b1665d32135",
+    "art/neutral/masks/eyelid-left.png": "8bd7e29d2470a952c7888ff484d91ba913d69fa628bc049c0b08dbc7632b17c3",
+    "art/neutral/masks/eyelid-right.png": "91fd375346d358e2c5a39b56d7c856a4661f9df4e2a09d1e59504f13ec0b9001",
+    "art/neutral/masks/lips.png": "dd9884165a757e55c02d92e77420d0f10c4f5d524bf0b8cff1d7447a6996ad21",
+    "art/neutral/masks/paint-valid.png": "cafc7619cbbb0f120d6a5ae00003909924519c3181e8e709c64cbf0ee7653a13",
+    "art/neutral/provenance.json": "c52f9cfd59af206ddb54fa0f1c501ed4fa2729ca341dfc32259ad7ef4d2a40e1",
+    "art/neutral/skin-base.png": "91027cb7bde5363321381f6b18a834d5c0a3384ba2d74126c21acbab49552d71"
+  },
+  "changes": [
+    "Locked neutral GLB bytes and materials retained.",
+    "Added bounded position and normal morph targets, with a fitted lash aperture target.",
+    "Added a separate ridged crown-bun mesh and fabric band.",
+    "Added offline authored complexion and hair recolors. These are not newly photographed skins."
+  ],
+  "limits": [
+    "Browser picking, paint replay, GPU memory, and device performance require runtime verification."
+  ],
+  "creditFile": "CREDITS.txt",
+  "provenanceFile": "provenance.json"
+}

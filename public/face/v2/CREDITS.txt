@@ -1,0 +1,10 @@
+Rain Rig (CC) Blender Foundation | studio.blender.org
+Source: https://studio.blender.org/characters/rain/
+License: https://creativecommons.org/licenses/by/4.0/
+
+This is a modified Rain portrait. No AI-generated artwork.
+The neutral portrait changes remain. V2 adds bounded face and lash morphs,
+a fitted crown bun, and offline skin and hair recolors.
+The recolors are not newly photographed skins.
+Blender Foundation does not endorse this project.
+See provenance.json and asset.json for the source and changes.

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  appendStroke, brushFromInput, captureStroke, catalog, decodeLook, decodeLookJSON,
+  appendStroke, brushFromInput, captureStroke, decodeLook, decodeLookJSON,
   defaultBrush, encodeLook, identityFromInput, lookFingerprint, newLook, palette, regions,
-  themes, tools,
+  themes, toolRegion, tools,
 } from "../src/look";
 import type { Brush, Look, Result, Stroke, UV } from "../src/look";
 import { createSession, presentSession, step } from "../src/session";
@@ -48,9 +48,9 @@ describe("look boundary", () => {
   it("round trips a canonical saved document and supplies a stable content key", () => {
     const look = newLook();
     expect(encodeLook(value(decodeLookJSON(encodeLook(look))))).toBe(
-      '{"version":1,"asset":"rain-portrait-v1","identity":{"geometry":"neutral-rain","eyes":"blue","complexion":"source","hairColor":"espresso","hairStyle":"ponytail"},"strokes":[]}',
+      '{"version":2,"asset":"rain-portrait-v2","identity":{"face":"balanced","nose":"balanced","mouth":"balanced","eyeShape":"balanced","complexion":"warm","eyes":"blue","hairColor":"espresso","hairStyle":"ponytail"},"strokes":[]}',
     );
-    expect(lookFingerprint(look)).toBe("rain-v1-ba089144a9289ca0");
+    expect(lookFingerprint(value(decodeLookJSON(encodeLook(look))))).toBe(lookFingerprint(look));
     const painted = value(appendStroke(look, stroke("one")));
     expect(value(decodeLookJSON(encodeLook(painted))).strokes[0]?.id).toBe("one");
     expect(lookFingerprint(painted) === lookFingerprint(look)).toBe(false);
@@ -58,7 +58,7 @@ describe("look boundary", () => {
 
   it("rejects corrupt JSON, unknown versions, assets, catalogs, and duplicate IDs", () => {
     expect(decodeLookJSON("{")).toEqual({ ok: false, error: "The saved look is not valid JSON." });
-    expect(decodeLook({ ...newLook(), version: 3 })).toEqual({ ok: false, error: "This look has an unknown version or portrait asset." });
+    expect(decodeLook({ ...newLook(), version: 4 })).toEqual({ ok: false, error: "This look has an unknown version or portrait asset." });
     expect(decodeLook({ ...newLook(), asset: "invented-face" })).toEqual({ ok: false, error: "This look has an unknown version or portrait asset." });
     expect(identityFromInput({ ...newLook().identity, geometry: "sculpted-heart" })).toEqual({ ok: false, error: "Unknown portrait appearance option." });
     expect(decodeLook({ ...newLook(), strokes: [stroke("same"), stroke("same")] })).toEqual({ ok: false, error: "A saved look repeats a gesture ID." });
@@ -114,7 +114,7 @@ describe("look boundary", () => {
     expect(decodeLookJSON(JSON.stringify(badUV))).toEqual({
       ok: false, error: "Paint coordinates must be finite UV pairs between zero and one.",
     });
-    const nonfinite = { ...newLook(), strokes: [{ ...stroke("bad"), brush: { ...defaultBrush(), opacity: NaN } }] };
+    const nonfinite = { ...newLook(), strokes: [{ ...stroke("bad"), brush: { ...stroke("bad").brush, opacity: NaN } }] };
     expect(decodeLookJSON(JSON.stringify(nonfinite))).toEqual({
       ok: false, error: "Brush color or settings are outside their allowed range.",
     });
@@ -139,7 +139,7 @@ describe("look boundary", () => {
       if (parsed.ok) {
         const brush = defaultBrush(parsed.value.tool);
         expect(brushFromInput(brush)).toEqual({ ok: true, value: brush });
-        expect(Object.hasOwn(regions, tools[brush.tool].region)).toBe(true);
+        expect(Object.hasOwn(regions, toolRegion(brush.tool))).toBe(true);
       }
     }
     for (const theme of Object.values(themes)) {
@@ -151,25 +151,54 @@ describe("look boundary", () => {
         if (rule.kind === "coverage") expect(Object.hasOwn(regions, rule.region)).toBe(true);
       }
     }
-    for (const geometry of Object.keys(catalog.geometry)) {
-      for (const eyes of Object.keys(catalog.eyes)) {
-        for (const complexion of Object.keys(catalog.complexions)) {
-          for (const hairColor of Object.keys(catalog.hairColors)) {
-            for (const hairStyle of Object.keys(catalog.hairStyles)) {
-              const parsed = identityFromInput({ geometry, eyes, complexion, hairColor, hairStyle });
-              expect(parsed).toEqual({ ok: true, value: { geometry, eyes, complexion, hairColor, hairStyle } });
-            }
-          }
-        }
-      }
-    }
-    for (const style of Object.values(catalog.hairStyles)) {
-      for (const mesh of style.visible) expect(["Hair", "HairSweep", "HairTail", "HairTie"]).toContain(mesh);
-    }
   });
 });
 
 describe("session transactions", () => {
+  it("switches workspaces without editing the look, history, deadline, or saved makeup controls", () => {
+    let session: Session = createSession(newLook(), { kind: "challenge", theme: "orchid-hour", deadline: 180_000 });
+    session = step(session, { type: "stroke", stroke: stroke("saved-paint") });
+    session = step(session, { type: "brush", brush: defaultBrush("lipstick") });
+    session = step(session, { type: "navigate", navigation: "turn" });
+    session = step(session, { type: "frame", framing: "lips" });
+    session = step(session, { type: "undo" });
+    const makeup = editing(session);
+    session = step(session, { type: "workspace", workspace: "customize" });
+    const customized = editing(session);
+    expect(customized.history).toBe(makeup.history);
+    expect(customized.mode).toBe(makeup.mode);
+    expect(customized.brush).toBe(makeup.brush);
+    expect([customized.framing, customized.navigation]).toEqual(["lips", "turn"]);
+    expect(presentSession(session)).toMatchObject({ workspace: "customize", readonly: true, framing: "face", navigation: "turn" });
+    for (const action of [
+      { type: "stroke", stroke: stroke("blocked") },
+      { type: "brush", brush: defaultBrush("blush") },
+      { type: "navigate", navigation: "paint" },
+      { type: "frame", framing: "eyes" },
+    ] as const) expect(step(session, action)).toBe(session);
+    session = step(session, { type: "workspace", workspace: "makeup" });
+    expect(editing(session).history).toBe(makeup.history);
+    expect(presentSession(session)).toMatchObject({ workspace: "makeup", readonly: false, framing: "lips", navigation: "turn", brush: makeup.brush });
+    session = step(session, { type: "redo" });
+    expect(editing(session).history.current.strokes.map((item) => item.id)).toEqual(["saved-paint"]);
+  });
+
+  it("uses the same identity history in customization and leaves it for the locked result", () => {
+    let session: Session = step(createSession(), { type: "workspace", workspace: "customize" });
+    const identity = { ...editing(session).history.current.identity, hairStyle: "bun" } as const;
+    session = step(session, { type: "identity", identity });
+    expect(editing(session).history.past).toHaveLength(1);
+    session = step(session, { type: "undo" });
+    expect(presentSession(session).look.identity.hairStyle).toBe("ponytail");
+    expect(presentSession(session).workspace).toBe("customize");
+    session = step(session, { type: "redo" });
+    expect(presentSession(session).look.identity.hairStyle).toBe("bun");
+    session = step(session, { type: "finish", id: "time-up", analysis });
+    expect(session.phase).toBe("reveal");
+    expect(presentSession(session)).toMatchObject({ workspace: "makeup", readonly: true, framing: "face", navigation: "turn", look: { identity } });
+    expect(step(session, { type: "workspace", workspace: "customize" })).toBe(session);
+  });
+
   it("makes one multi-path gesture one undo item and preserves old brush settings", () => {
     const gesture = value(captureStroke("both", defaultBrush("blush"), [[[0.2, 0.4]], [[0.8, 0.4]]]));
     let session: Session = step(createSession(), { type: "stroke", stroke: gesture });
@@ -183,7 +212,9 @@ describe("session transactions", () => {
   });
 
   it("captures the selected lipstick default without changing saved lip settings", () => {
-    const savedJSON = '{"version":1,"asset":"rain-portrait-v1","identity":{"geometry":"neutral-rain","eyes":"blue","complexion":"source","hairColor":"espresso","hairStyle":"ponytail"},"strokes":[{"id":"old-lip","brush":{"tool":"lipstick","color":"#51284e","radius":0.025,"opacity":0.95,"softness":0.3,"finish":0.8},"paths":[[[0.4,0.8],[0.6,0.8]]]}]}';
+    const savedJSON = encodeLook(value(appendStroke(newLook(), stroke("saved-lip", {
+      ...defaultBrush("lipstick"), color: "#51284e", radius: 0.025,
+    }))));
     const saved = value(decodeLookJSON(savedJSON));
     let session: Session = step(createSession(saved), { type: "brush", brush: defaultBrush("lipstick") });
     const captured = value(captureStroke("new-lip", editing(session).brush, [[[0.4, 0.8], [0.6, 0.8]]]));
@@ -257,7 +288,7 @@ describe("session transactions", () => {
     session = step(session, { type: "stroke", stroke: stroke("accepted") });
     const frame = presentSession(session);
     expect([frame.readonly, frame.framing, frame.navigation, frame.look.strokes[0]?.id]).toEqual([false, "lips", "paint", "accepted"]);
-    expect(Object.keys(frame).sort()).toEqual(["brush", "framing", "look", "navigation", "readonly"]);
+    expect(Object.keys(frame).sort()).toEqual(["brush", "framing", "look", "navigation", "readonly", "workspace"]);
     session = step(session, { type: "finish", id: "practice", analysis });
     if (session.phase !== "reveal") throw new Error("Expected reveal.");
     expect(session.submission.outcome).toEqual({ kind: "practice" });

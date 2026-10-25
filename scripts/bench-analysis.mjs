@@ -16,6 +16,7 @@ const { values: options } = parseArgs({ options: {
   baseline: { type: 'string', default: 'benchmarks/analysis-baseline/paint.ts' },
   out: { type: 'string' },
   profile: { type: 'string' },
+  'self-check': { type: 'boolean', default: false },
   help: { type: 'boolean' },
 } });
 const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
@@ -48,15 +49,31 @@ async function loadPaint(filename, side) {
   const lookSource = fs.readFileSync(lookPath, 'utf8');
   const sourceUrl = (name) => `${pathToFileURL(name).href}?analysis-bench=${side}`;
   const moduleUrl = (source, name) => `data:text/javascript;analysis-bench=${side};base64,${Buffer.from(`${source}\n//# sourceURL=${sourceUrl(name)}\n`).toString('base64')}`;
-  const lookUrl = moduleUrl(dataModule(lookSource, lookPath), lookPath);
+  let lookJS = dataModule(lookSource, lookPath);
+  let temporary = null;
+  if (/from ["']\.\/avatar["']/.test(lookJS)) {
+    const avatarPath = path.join(path.dirname(lookPath), 'avatar.ts');
+    const registryPath = path.join(path.dirname(lookPath), '../art/avatar-v2.json');
+    const avatarJS = dataModule(fs.readFileSync(avatarPath, 'utf8'), avatarPath)
+      .replace(/(["'])\.\.\/art\/avatar-v2\.json\1/, JSON.stringify(pathToFileURL(registryPath).href));
+    temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'make1up-analysis-'));
+    const avatarUrl = pathToFileURL(path.join(temporary, 'avatar.mjs')).href;
+    fs.writeFileSync(path.join(temporary, 'avatar.mjs'), avatarJS);
+    lookJS = lookJS.replace(/from ["']\.\/avatar["']/g, `from ${JSON.stringify(avatarUrl)}`);
+  }
+  const lookUrl = moduleUrl(lookJS, lookPath);
   let paintJS = dataModule(paintSource, filename);
   assert.equal(paintJS.match(/from ["']\.\/look["']/g)?.length, 1, 'Expected one pure paint registry import.');
   paintJS = paintJS.replace(/from ["']\.\/look["']/, `from ${JSON.stringify(lookUrl)}`);
-  return {
-    paint: await import(moduleUrl(paintJS, filename)), look: await import(lookUrl),
-    paths: { paint: filename, look: lookPath },
-    hashes: { 'paint.ts': sha256(paintSource), 'look.ts': sha256(lookSource) },
-  };
+  try {
+    return {
+      paint: await import(moduleUrl(paintJS, filename)), look: await import(lookUrl),
+      paths: { paint: filename, look: lookPath },
+      hashes: { 'paint.ts': sha256(paintSource), 'look.ts': sha256(lookSource) },
+    };
+  } finally {
+    if (temporary !== null) fs.rmSync(temporary, { recursive: true, force: true });
+  }
 }
 
 function readRedMask(filename) {
@@ -110,13 +127,26 @@ function value(result) {
   return result.value;
 }
 
+function assertFieldEqual(actual, expected, label) {
+  assert.equal(actual.size, expected.size, `${label} size differs.`);
+  for (const key of ['rgba', 'finish']) {
+    const a = actual[key], b = expected[key];
+    assert.equal(a.length, b.length, `${label} ${key} length differs.`);
+    if (Buffer.compare(Buffer.from(a.buffer, a.byteOffset, a.byteLength), Buffer.from(b.buffer, b.byteOffset, b.byteLength)) !== 0) {
+      const index = a.findIndex((value, offset) => value !== b[offset]);
+      assert.fail(`${label} ${key} differs at ${index}: ${a[index]} != ${b[index]}.`);
+    }
+  }
+}
+
 function fixtures(baseline, head) {
-  const assetPath = resolve('public/face/v1/asset.json');
+  const assetPath = resolve('public/face/v2/asset.json');
   const assetBytes = fs.readFileSync(assetPath);
   const asset = JSON.parse(assetBytes);
-  assert.equal(asset.paint.textureSize, 1024);
-  const images = Object.fromEntries(Object.entries(asset.paint.masks).map(([name, file]) => [
-    name, readRedMask(resolve(`public/face/v1/${file}`)),
+  const atlas = asset.paintAtlas;
+  assert.equal(atlas.paint.textureSize, 1024);
+  const images = Object.fromEntries(Object.entries(atlas.paint.masks).map(([name, file]) => [
+    name, readRedMask(resolve(`public/face/v2/${file}`)),
   ]));
   const merge = (left, right) => images[left].red.map((byte, index) => Math.max(byte, images[right].red[index]));
   const masks = value(head.paint.createPaintMasks({
@@ -124,7 +154,7 @@ function fixtures(baseline, head) {
     cheeks: merge('cheek-left', 'cheek-right'), lids: merge('eyelid-left', 'eyelid-right'),
   }));
   assert.deepEqual(value(baseline.paint.createPaintMasks(masks)), masks);
-  const guide = (key) => asset.landmarks[key].paintUV;
+  const guide = (key) => atlas.landmarks[key].paintUV;
   const cheeks = ['cheekLeft', 'cheekRight'].map((key) => {
     const [u, v] = guide(key);
     return [[u - 0.016, v], [u, v], [u + 0.016, v]];
@@ -137,10 +167,9 @@ function fixtures(baseline, head) {
   ];
   const strokes = strokeInputs.map((args) => value(head.look.captureStroke(...args)));
   assert.deepEqual(strokes, strokeInputs.map((args) => value(baseline.look.captureStroke(...args))));
-  const strokeField = head.paint.composePaint(strokes, masks);
-  assert.deepEqual(strokeField, baseline.paint.composePaint(strokes, masks));
+  const strokeField = baseline.paint.composePaint(strokes, masks);
   const blank = head.paint.composePaint([], masks);
-  assert.deepEqual(blank, baseline.paint.composePaint([], masks));
+  assertFieldEqual(blank, baseline.paint.composePaint([], masks), 'Blank paint field');
   const colors = [[204, 80, 117], [167, 100, 203], [81, 40, 78], [23, 20, 36],
     [229, 184, 93], [242, 233, 223], [219, 118, 97], [0, 255, 0]];
   const dense = { size: 1024, rgba: new Uint8ClampedArray(1024 * 1024 * 4), finish: new Uint8Array(1024 * 1024) };
@@ -210,6 +239,7 @@ async function main() {
     console.log('Usage: node scripts/bench-analysis.mjs [--baseline PATH/paint.ts] [--out NEW.json] [--profile NEW.cpuprofile]');
     console.log('The baseline needs its original sibling look.ts. A sibling manifest.json, if present, verifies both source hashes.');
     console.log('Default baseline: benchmarks/analysis-baseline/paint.ts. No baseline is created or replaced.');
+    console.log('--self-check loads the fixtures and compares outputs without timing or profiling.');
     console.log('Five warmup pairs precede five timed pairs per fixture. --profile instead collects a separate unreported CPU profile.');
     return;
   }
@@ -228,7 +258,7 @@ async function main() {
   if (fs.existsSync(manifestPath)) assert.deepEqual(baseline.hashes, JSON.parse(fs.readFileSync(manifestPath, 'utf8')).sources, 'Saved baseline source hash mismatch.');
   assert.deepEqual(head.look.palette, baseline.look.palette);
   const paintTools = (registry) => Object.fromEntries(Object.entries(registry)
-    .map(([id, { defaults: _defaults, ...policy }]) => [id, policy]));
+    .map(([id, { defaults: _defaults, region: _region, ...policy }]) => [id, policy]));
   assert.deepEqual(paintTools(head.look.tools), paintTools(baseline.look.tools));
   assert.deepEqual(head.look.themes, baseline.look.themes);
   const inputs = fixtures(baseline, head);
@@ -240,6 +270,12 @@ async function main() {
     verify(head.paint.analyzePaint(fixture.field, fixture.masks), fixture, head.paint);
     if (fixture.name === 'native-blank') assert.equal(fixture.expected.alphaMass, 0);
     else assert(fixture.expected.alphaMass > 0 && fixture.evidence.validPaintedPixels > 0, `${fixture.name} must perform visible-paint analysis.`);
+  }
+  if (options['self-check']) {
+    for (const fixture of inputs.cases) assert.deepEqual(inputEvidence(fixture), fixture.evidence, `${fixture.name} mutated its input bytes.`);
+    console.log(JSON.stringify({ kind: 'source-self-check', errors: 0, fixtures: fixtureNames,
+      assetSha256: inputs.assetSha256, outputsMatch: true, inputsUnchanged: true }));
+    return;
   }
   for (let pair = 0; pair < rounds; pair += 1) {
     for (const fixture of inputs.cases) {

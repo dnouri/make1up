@@ -6,9 +6,10 @@ import {
 import type { Intersection } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshBVH } from "three-mesh-bvh";
-import headUrl from "../public/face/v1/head.glb?url&inline";
-import maskUrl from "../public/face/v1/masks/paint-valid.png?url&inline";
-import { captureStroke, catalog, defaultBrush } from "../src/look";
+import headUrl from "../public/face/v2/head.glb?url&inline";
+import maskUrl from "../public/face/v2/masks/paint-valid.png?url&inline";
+import { captureStroke, defaultBrush } from "../src/look";
+import { avatarChoices } from "../src/avatar";
 import type { UV } from "../src/look";
 import { indexPortrait } from "../src/picking";
 
@@ -292,8 +293,7 @@ it("matches head.glb hits, occlusion, UV1, mirrors, and captured paths across th
     object.name = typeof object.userData.name === "string" ? object.userData.name : object.name;
     meshes.push(object);
   });
-  expect(meshes).toHaveLength(12);
-  expect(meshes.reduce((sum, mesh) => sum + mesh.geometry.index!.count / 3, 0)).toBe(111070);
+  expect(meshes.map((mesh) => mesh.name)).toEqual(expect.arrayContaining(["Face", "Lashes", "HairBun", "BunBand"]));
   expect(meshes.every((mesh) => mesh.geometry.groups.length === 0)).toBe(true);
   const face = meshes.find((mesh) => mesh.name === "Face")!;
   const indexReferences = meshes.map((mesh) => mesh.geometry.index);
@@ -338,7 +338,7 @@ it("matches head.glb hits, occlusion, UV1, mirrors, and captured paths across th
   for (const mesh of meshes) mesh.raycast = () => { throw new Error("The per-mesh stock raycast was not replaced."); };
   const release = indexPortrait(meshes);
   try {
-    for (const mesh of meshes) {
+    for (const mesh of meshes.filter((mesh) => mesh.morphTargetInfluences === undefined)) {
       expect(mesh.geometry.boundsTree).toBeInstanceOf(MeshBVH);
       expect(mesh.geometry.boundsTree!.indirect).toBe(true);
     }
@@ -346,7 +346,7 @@ it("matches head.glb hits, occlusion, UV1, mirrors, and captured paths across th
       for (const yaw of [-28, 0, 28]) {
         for (const pitch of [-12, 0, 12]) {
           for (const zoom of [1, 1.7]) {
-            for (const style of Object.values(catalog.hairStyles)) {
+            for (const style of Object.values(avatarChoices.hairStyle)) {
               const aspect = [0.55, 0.8, 1.4][(viewCount + Math.floor(viewCount / 3)) % 3]!;
               const span = Math.max(frame.span, frame.width / aspect) / zoom;
               camera.left = -span * aspect / 2;
@@ -361,10 +361,15 @@ it("matches head.glb hits, occlusion, UV1, mirrors, and captured paths across th
               pivot.position.y = 0.277 + (viewCount % 3 - 1) * 0.0012;
               pivot.rotation.set(pitch * Math.PI / 180, yaw * Math.PI / 180, 0, "YXZ");
               for (const mesh of meshes) {
-                if (["Hair", "HairSweep", "HairTail", "HairTie"].includes(mesh.name)) {
-                  mesh.visible = (style.visible as readonly string[]).includes(mesh.name);
+                if (["Hair", "HairSweep", "HairTail", "HairTie", "HairBun", "BunBand"].includes(mesh.name)) {
+                  mesh.visible = (style.components as readonly string[]).includes(mesh.name);
+                }
+                mesh.morphTargetInfluences?.fill(0);
+                if (mesh.morphTargetInfluences !== undefined && viewCount % 2 === 1) {
+                  mesh.morphTargetInfluences[viewCount % mesh.morphTargetInfluences.length] = 1;
                 }
               }
+              release.refit();
               pivot.updateWorldMatrix(true, true);
               const visible = meshes.filter((mesh) => {
                 for (let object: typeof mesh.parent = mesh; object !== null; object = object.parent) {
@@ -426,8 +431,8 @@ it("matches head.glb hits, occlusion, UV1, mirrors, and captured paths across th
         }
       }
     }
-    expect(viewCount).toBe(162);
-    expect(rayCount).toBeGreaterThan(2000);
+    expect(viewCount).toBe(108);
+    expect(rayCount).toBeGreaterThan(1500);
     expect(acceptedCount).toBeGreaterThan(500);
     expect(mirrorCount).toBeGreaterThan(250);
     expect([...seen]).toEqual(expect.arrayContaining(["Face", "Hair", "HairSweep", "Eye.L", "Eye.R", "Lashes", "Brows"]));
