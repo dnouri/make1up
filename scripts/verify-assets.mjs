@@ -132,7 +132,6 @@ const neutral = glb(path.join(root, registry.source.neutral));
 const v2 = glb(path.join(directory, 'head.glb'));
 assert.equal(manifest.registrySha256, fileHash(registryPath));
 assert.equal(manifest.generatorSha256, fileHash(path.join(root, 'scripts/prepare-avatar.py')));
-assert.equal(manifest.sourceBlendSha256, fileHash(path.join(root, registry.source.blend)));
 assert.equal(manifest.glb.sha256, hash(v2.bytes));
 assert.equal(manifest.glb.bytes, v2.bytes.length);
 assert.equal(manifest.glb.preservedNeutralBinaryPrefixBytes, neutral.binary.length);
@@ -158,7 +157,10 @@ assert.equal(manifest.id, registry.asset);
 assert(!JSON.stringify(manifest).includes('/face/v1/'), 'The runtime manifest must not refer to an old asset directory.');
 assert(fs.readFileSync(path.join(directory, manifest.creditFile), 'utf8').includes(registry.source.credit));
 assert(fs.readFileSync(path.join(directory, manifest.creditFile), 'utf8').includes('https://creativecommons.org/licenses/by/4.0/'));
-assert.equal(JSON.parse(fs.readFileSync(path.join(directory, manifest.provenanceFile), 'utf8')).sourceBlendSha256, manifest.sourceBlendSha256);
+const provenance = JSON.parse(fs.readFileSync(path.join(directory, manifest.provenanceFile), 'utf8'));
+assert.equal(provenance.sourceBlendSha256, manifest.sourceBlendSha256);
+assert.equal(provenance.sha256, registry.source.archiveSha256);
+if (directory !== publicRoot) assert.equal(manifest.sourceBlendSha256, fileHash(path.join(root, registry.source.blend)));
 for (const file of ['CC-BY-4.0.txt', 'Rain-embedded-readme.txt']) {
   assert.equal(fileHash(path.join(directory, 'licenses', file)), fileHash(path.join(neutralRoot, 'licenses', file)));
 }

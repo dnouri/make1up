@@ -1,67 +1,108 @@
-# The Make1Up document and portrait
+# The v2 document and portrait
 
-## Decision
+MAKE1UP separates a saved makeup look from the session that edits it and the renderer that displays it. The saved value contains identity choices and completed UV strokes. Camera movement, brush controls, loading state, and workspace navigation do not belong in that document.
 
-Candidate A is the base. Its immutable Look, single Session writer, phase union, and derived renderer state are easier to verify than an event log for every identity and layer operation. The independent cross-judge scored A 19 and B 15 out of 20 in `tmp/design/judgment.md`. The judge ran on `zai/glm-5.3` after the configured Kimi candidate failed before work began.
+V2 is the only playable portrait and look format. The operator chose a fresh v2 lookbook without backward compatibility or imports of older looks.
 
-Graft B's stable look fingerprint and bounded URL sharing. Do not add its full event-log projection or skin-dependent judging. Drop A's unsupported negative-type-check claim rather than reuse it as evidence.
+## One immutable look shape
 
-The art probe changed the asset choice. `tmp/art-probe/evidence/comparison.png` shows both actual exports under the same conditions. Rain has the stronger eyes, hair, and skin detail. Use the modified CC-BY Rain portrait in `public/face/v1/`. Keep its credit, license, and change notices. Its higher triangle count requires a browser check. The source is not AI-generated. One neutral sculpt is supported. Do not invent identity morphs or expressions.
+`Look` is the single persisted document shape in `src/look.ts`.
 
-## Core shape
+```ts
+type Look = Readonly<{
+	version: 2;
+	asset: "rain-portrait-v2";
+	identity: AvatarIdentity;
+	strokes: readonly Stroke[];
+}>;
+```
 
-A versioned Look owns appearance choices and an ordered list of completed UV strokes. Each gesture is one transaction. Brush settings belong to the stroke, so changing the current brush cannot alter old paint. Paint and base skin remain separate.
+`AvatarIdentity` is a flat record with eight fields. They are `face`, `nose`, `mouth`, `eyeShape`, `complexion`, `eyes`, `hairColor`, and `hairStyle`. There is no identity-kind discriminator. `newLook()` always creates this document with the registry's default identity and no strokes.
 
-One pure reducer changes Session. Editing owns bounded undo and redo histories. Reveal and result own an immutable submission. Repeated finish and stale reveal events do not resubmit. Practice has no deadline. Challenge mode can have a clearly labeled optional clock. Use framing actions to change face, eyes, or lips views. Renderer zoom only adjusts within that framing.
+`art/avatar-v2.json` owns the choice IDs, labels, semantic morph names, color-map paths, authoring recipes, and hairstyle component sets. `src/avatar.ts` derives the identity type, catalogs, labels, and input validator from that registry. The generator reads the same registry, so controls and assets use the same names.
 
-A literal Tool registry defines labels, pigment behavior, region masks, and defaults. UI and painter read it. The implemented tools are blush, eyeshadow, lipstick, liner, sparkle stamp, erase, and blend. A safe whole-region application can help beginners, but it must be labeled an application action rather than a freehand stroke.
+The decoder validates exact document, identity, stroke, and brush fields at the input boundary. It rejects other document versions, other asset IDs, unknown choices, extra fields, and values beyond the document limits. Canonical encoding gives each look a stable fingerprint.
 
-Critique measures final composited makeup, not identity, name, payment, random numbers, or pretend human votes. Its published rules and deterministic assessment accept paint analysis only. Erased paint cannot still earn points. Label the result a solo brief match, not a beauty score.
+Each gesture stores its own brush settings and quantized UV paths. Changing the current brush does not change completed paint. Identity edits replace the identity without changing those paths. Clear removes makeup strokes, not identity choices.
 
-## Boundaries
+## Session owns edits and submission
 
-- `src/look.ts` owns domain types, catalogs, tool and theme registries, input decoding, and pure look operations.
-- `src/session.ts` owns phase and history transitions.
-- `src/paint.ts` owns raster compositing, gesture transactions, and paint analysis. It accepts semantic masks explicitly and never imports Three.js or DOM. A transaction owns mutable preview buffers. It rasterizes only appended captured segments and composites from its unchanged base. Finishing transfers the candidate only when pigment or finish bytes differ.
-- `src/portrait.ts` owns Three.js, mask loading, projection, previews, one render loop, camera, texture caches, and PNG capture. It consumes Look snapshots and admits new strokes through `applyStroke`. Direct and Guided input use the same exact-byte effect check. Only an effective gesture reaches `onStroke`. The reducer remains the sole history writer, and `present` remains the sole committed-field writer.
-- `src/picking.ts` installs local spatial indexes on the static portrait meshes. It preserves triangle order, second UV coordinates, and stock raycast tie order. Cleanup restores the original mesh methods and geometry state. It does not patch global Three.js prototypes.
-- `src/lookbook.ts` owns local persistence and bounded share encoding. It validates decoded data through the domain gate. Failed saves preserve the current look.
-- `src/app.ts` and `src/style.css` own the visible game. The app is the sole Session variable owner.
-- `tests/` and `scripts/` own repeatable behavioral and actual-browser checks.
+`src/session.ts` has one pure reducer, `step`. `src/app.ts` owns the sole Session variable and dispatches actions through that reducer.
 
-Use Vite and strict TypeScript without a UI framework. Dependencies must earn their place. No backend, account, service key, photo upload, or runtime AI call is needed.
+Editing owns a bounded history of immutable looks, the current brush, mode, framing, navigation, and workspace. An effective gesture, a changed identity choice, a loaded look, or a clear operation is one edit. No-op edits do not add history. Undo and redo restore whole looks.
 
-## Asset and paint contract
+The phase union separates editing, reveal, and result. Finish creates an immutable submission with its look and practice or challenge outcome. Repeated Finish actions and stale reveal-completion events cannot resubmit it. Practice has no deadline or score. Challenge mode has an optional deadline.
 
-Follow `public/face/HANDOFF.md` and `public/face/v1/asset.json`. The head faces +Z and uses meters with +Y up. Keep source base UVs. Paint the Face mesh through its second UV attribute, `uv1`. The second atlas is a front-only, top-left projection with a reserved transparent border. Use `flipY=false` and the provided valid, lip, cheek, and eyelid masks.
+`presentSession` derives the renderer's presentation. The `customize` workspace projects a read-only, full-face turn view without overwriting the makeup brush, framing, or navigation. The reducer blocks paint and makeup-view changes there. Identity edits and history remain available. A locked result always projects the makeup workspace.
 
-Use the local geometry indexes to raycast all visible portrait meshes and reject a brush if the nearest visible object is not Face. Interpolate the second UV channel. Mirror by reflecting the local hit in X and recasting, rather than assuming all future atlases are symmetric. Keep the head still during a paint gesture. Turn mode is explicit. Limit supported views to the asset's tested range.
+## One region rule for every tool
 
-Appearance choices can include tested complexion tints, iris maps, hair colors, fitted hair visibility styles, and lashes. They are not independent sculpted faces. Test every exposed option under the same light. The editor and export use the same portrait and paint code.
+The literal Tool registry in `src/look.ts` defines labels, operations, tips, placement, defaults, and one region per tool. The UI and painter read that registry.
 
-## Gesture and saved-paint compatibility
+Lipstick uses `lips`. Blush, eyeshadow, liner, sparkle stamp, erase, and blend use `valid`, which means all paintable face skin. There is no per-stroke placement policy. The same rule applies to every accepted stroke.
 
-A draft retains its quantized coverage between frames. Pigment and erase use maximum coverage within one gesture, so extra preview frames cannot increase opacity. On release, the portrait drains the final samples and offers the computed candidate to the reducer. `present` adopts it only for the exact accepted one-stroke append on the same base. Rejected edits and canceled gestures leave committed pixels unchanged.
+Cheek and eyelid masks remain available to paint analysis. They do not restrict freehand blush or eyeshadow. Guided apply uses the asset's UV landmarks and sends a real stroke through the same admission path as direct input.
 
-New Blend strokes carry `algorithm: "soften-v1"`. They use a contiguous local box filter of existing premultiplied color, alpha, and finish. Brush travel accumulates integer influence at fixed distance intervals. Strength controls interpolation toward that fixed filtered result. The effect is independent of frame cadence and does not move pigment directionally. The local filter excludes invalid atlas samples but includes valid blank skin.
+## Paint owns pixels and assessment
 
-Untagged strokes retain their original paint behavior, including the old nine-tap Blend. Their version 1 JSON and fingerprints do not change. The first accepted tagged Blend promotes its document to version 2. Old clients reject that version instead of silently changing its appearance. The existing lookbook and share containers can hold both document versions.
+`src/paint.ts` owns raster compositing, gesture transactions, and analysis. It accepts explicit masks and has no dependency on Three.js or the DOM. Base skin maps and makeup remain separate.
 
-## Verification order
+A gesture transaction owns mutable preview buffers and an unchanged committed base. It rasterizes appended captured segments and retains quantized coverage between frames. Extra preview frames cannot increase pigment or erase opacity. On release, it drains the final samples and compares the candidate's RGBA and finish bytes with the base. An unchanged candidate does not become an edit.
 
-1. Build domain tests, a production build command, and a rerunnable browser check before broad UI work.
-2. Load the actual portrait. Paint an asymmetric cheek and the lips. Verify rotation, removal, undo, and PNG output. Inspect the real screenshot before expanding content.
-3. Complete challenge, practice, reveal, replay, local save, reopen, and share or PNG export.
-4. Run desktop, portrait phone, and landscape phone workflows. Check keyboard controls, pointer cancellation, corrupt saves, missing assets, and storage failure.
-5. Compare actual portraits against the public references. Record honest rubric scores and gaps. Real-device phone performance and first-time human usability cannot be inferred from desktop automation.
+Blend capture selects `algorithm: "soften-v1"`, the current blend algorithm identifier. The algorithm softens existing premultiplied color, alpha, and finish through a local box filter. Fixed-distance brush samples accumulate influence within the gesture. Blend adds no pigment and does not move pigment in the travel direction.
 
-## Throughput checkpoint
+`src/portrait.ts` offers effective strokes through `onStroke`. The Session reducer remains the only history writer. The renderer's `present` method remains the only committed-field writer. It adopts a computed candidate only for the exact accepted one-stroke append on the same base. Canceled gestures and rejected edits leave committed paint unchanged.
 
-- **Blocking first steps.** The domain owner fixes exported types and tests before app and renderer writers separate.
-- **Independent workstreams.** After that gate, renderer owns `src/portrait.ts` only. Application owner owns the DOM, styles, persistence, and browser tests. The domain owner remains the only writer of domain modules until its handoff.
-- **Shared mutable state.** One app state owner. One renderer loop. Separate worker files. Root integration happens only after each foreground wave returns.
-- **Smallest safe decomposition.** One app owner integrates the loop. A portrait specialist owns the hardest graphics module. Independent review judges both against actual evidence.
+Analysis reads the final composited paint field. The renderer caches that analysis until committed paint changes. `assess` applies the published theme rules to coverage, palette, and finish. Identity choices, names, payment, random values, and pretend human votes do not affect the solo brief match. Erased paint cannot retain points.
 
-## Deferred product scope
+## One v2 rig and render loop
 
-Online multiplayer, public voting, moderation, public gallery, large catalogs, sculpted facial identities, expressions, and live AI generation are not part of this first run. They require separate design and tests. A good local studio is not evidence of social-game parity or virality.
+`src/portrait.ts` loads `public/face/v2/head.glb` and its masks through Vite's base URL. It owns one WebGL renderer, scene, render loop, orthographic camera, paint textures, gestures, and resource cleanup. `art/neutral/` is an authoring input directory, not a runtime asset.
+
+The renderer applies shape choices by semantic target name. It resets and applies all face and fitted-lash weights before it refits picking. Hairstyle choices select the registry's complete ponytail or crown-bun component set. Appearance maps replace base color textures without changing the paint field.
+
+The [asset handoff](../public/face/HANDOFF.md) and `public/face/v2/asset.json` define the geometry and paint contract. `Face` retains its base UVs and frozen second UV atlas. Only approved front-visible polygons have paint coordinates. Rear and hidden polygons use a reserved transparent texel. Morphs move geometry while those UVs remain fixed.
+
+### Dynamic picking follows the displayed shape
+
+`src/picking.ts` installs local indexes without patching global Three.js prototypes. Static meshes use geometry-level `MeshBVH` indexes. Meshes with position morphs use per-instance `SkinnedMeshBVH` indexes, which read posed vertex positions. Per-instance trees keep two meshes with different morph weights from sharing the wrong pose.
+
+Every complete identity pose refits the dynamic trees and updates their bounds. Picking preserves triangle order, interpolated second UVs, and stock raycast tie order. Cleanup restores the mesh methods and geometry state.
+
+The renderer raycasts every visible portrait mesh and accepts a brush only when the nearest hit is `Face`. Its second UV must avoid the reserved border and pass the valid-face mask. Eyes, lashes, and hair therefore block paint. Mirror input reflects the local hit in X and raycasts again. It does not assume a symmetric atlas. The head stays still during a paint gesture, and Turn is explicit navigation.
+
+### Appearance availability is separate from the look
+
+`src/appearance.ts` manages borrowed color maps. It reuses embedded default maps and loads only selected external face, bust, hair, and iris maps. A reference-counted cache evicts unused entries above a six-entry target. Maps still in use remain retained.
+
+The portrait reports `ready`, `loading`, or `error`. A request is accepted only if it is still the current request. Late completion cannot overwrite a newer identity. The last ready appearance can remain visible while another selection loads, but paint, analysis, and capture require readiness. Retry requests the selected identity again without changing the document.
+
+The app also guards Finish with readiness. A challenge timer continues in customization. A ready appearance can finish on expiry and exit to the locked result. Pending or failed appearance loading delays submission until readiness.
+
+### Capture restores the latest live portrait
+
+The app serializes capture jobs. Each capture borrows the requested identity's maps and waits for them before drawing. Once resources are ready, capture synchronously applies that identity and its paint to the same renderer, frames the cover, and copies the rendered canvas.
+
+A `finally` block restores the latest live identity and maps, displayed paint, camera, portrait transform, cursors, render size, and pixel ratio. Restoration also runs when drawing fails. PNG encoding happens after the live renderer is restored, and the borrowed maps are released when the capture job ends. App job tokens and document revisions keep stale asynchronous results from replacing newer UI state.
+
+## The same-canvas customization workspace
+
+`src/app.ts` and `src/style.css` own the full-viewport workspace. Registry-generated native fieldsets and radio choices expose all eight identity fields. The existing canvas remains in the same stage parent with the same WebGL context. No second preview or renderer exists.
+
+Desktop and short landscape layouts place the preview beside independently scrolling controls. Portrait phone layouts reserve the preview above the controls. The header and footer remain visible. Paint controls are hidden. Turn, zoom, credit, loading, retry, Undo, Redo, and Done remain available.
+
+Workspace navigation is editing view state, not a look edit. The portrait stores separate framing, yaw, pitch, and zoom for makeup and customization. Entering customization does not reset the saved makeup view. Done and Escape restore document scroll and focus **Customize portrait**. Hidden regions cannot receive focus, and numeric makeup shortcuts do not run in customization.
+
+## V2-only persistence and sharing
+
+`src/lookbook.ts` reads and writes only `make1up.lookbook.v2`. That lookbook starts empty. The app does not read, copy, or clear `make1up.lookbook.v1`. Older look documents are unsupported.
+
+The lookbook holds at most eight validated entries with thumbnails and content fingerprints. Save and share operations use the same canonical v2 look encoder. Storage failures leave the current look unchanged. Share fragments contain bounded raw or compressed JSON, and decompression has an explicit size limit. Container version markers describe storage or transport only. Every enclosed look must pass the v2 decoder.
+
+Sequential multi-tab saves and refresh checks do not establish atomic simultaneous writes. The app has no backend, account, service key, imported photo, runtime AI call, public gallery, or online voting service.
+
+## Verification boundaries
+
+Domain and paint tests cover the document, history, tool rule, transactions, scoring, appearance requests, and morph-aware picking. Asset checks verify the generated v2 files against the locked neutral authoring inputs. Production Chromium workflows exercise actual pixels, touch input, customization, failure states, saved looks, sharing, and PNG restoration.
+
+The [verification record](verification.md) gives the current counts and the five customization viewport results. Geometry checks are not human art approval. Software WebGL and emulated phones do not establish physical-phone performance, Safari behavior, Firefox behavior, or human screen-reader usability.
