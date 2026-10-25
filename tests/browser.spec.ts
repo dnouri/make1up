@@ -144,6 +144,8 @@ test("a fresh face, real mouse or touch strokes, history, clear, and keyboard to
 test("phone correction stays beside the portrait through precision work and finishing", async ({ page }, info) => {
   test.skip(!info.project.use.hasTouch, "This is the phone editing continuity check.");
   await openStudio(page);
+  await page.getByRole("button", { name: "Customize portrait", exact: true }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   const initialScroll = await page.evaluate(() => scrollY);
   expect(initialScroll).toBe(0);
   const quickSize = page.getByRole("slider", { name: "Quick brush size", exact: true });
@@ -364,11 +366,13 @@ test("local save survives reload, restores paint, exports a real PNG, and opens 
   await guidedApply(page, "Blush", "Coral");
   await drawCheek(page, info);
   await expect(page.locator("#gesture-count")).toHaveText("2 gestures");
-  await page.locator(".appearance-section > summary").click();
-  await page.getByRole("combobox", { name: "Iris color", exact: true }).selectOption("olive");
-  await page.getByRole("combobox", { name: "Complexion", exact: true }).selectOption("deep");
-  await page.getByRole("combobox", { name: "Hair color", exact: true }).selectOption("plum");
-  await page.getByRole("combobox", { name: "Hairstyle", exact: true }).selectOption("bun");
+  await page.getByRole("button", { name: "Customize portrait", exact: true }).click();
+  await page.getByRole("group", { name: "Iris color", exact: true }).getByRole("radio", { name: "Olive", exact: true }).check();
+  await page.getByRole("group", { name: "Complexion", exact: true }).getByRole("radio", { name: "Deep", exact: true }).check();
+  await page.getByRole("group", { name: "Hair color", exact: true }).getByRole("radio", { name: "Plum", exact: true }).check();
+  await page.getByRole("group", { name: "Hairstyle", exact: true }).getByRole("radio", { name: "Crown bun", exact: true }).check();
+  await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "ready");
+  await page.getByRole("button", { name: "Done", exact: true }).click();
   const originalPNG = await downloadPNG(page, info, "original-look.png");
   await page.getByRole("button", { name: "Save look", exact: true }).click();
   await expect(page.locator("#app-status")).toHaveText("Saved to your lookbook on this device.");

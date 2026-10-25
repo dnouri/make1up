@@ -14,15 +14,25 @@ test.afterEach(({ page }) => expect(runtimeErrors.get(page)).toEqual([]));
 async function open(page: Page) {
   await page.goto("./");
   await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "ready", { timeout: 30_000 });
-  await page.locator(".appearance-section > summary").click();
+  await page.getByRole("button", { name: "Customize portrait", exact: true }).click();
+}
+
+async function makeup(page: Page) {
+  if (await page.locator("#studio").getAttribute("data-workspace") === "customize") await page.getByRole("button", { name: "Done", exact: true }).click();
+}
+
+async function choose(page: Page, field: string, id: string) {
+  if (await page.locator("#studio").getAttribute("data-workspace") !== "customize") await page.getByRole("button", { name: "Customize portrait", exact: true }).click();
+  await page.locator(`#appearance-${field}-${id}`).check();
 }
 
 async function select(page: Page, field: string, id: string) {
-  await page.locator(`#appearance-${field}`).selectOption(id);
+  await choose(page, field, id);
   await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "ready");
 }
 
 async function png(page: Page, info: TestInfo, name: string): Promise<Image> {
+  await makeup(page);
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download PNG", exact: true }).click();
   const image = await download;
@@ -92,6 +102,7 @@ async function livePixels(page: Page) {
 }
 
 async function guided(page: Page, tool: string, color: string) {
+  await makeup(page);
   await page.getByRole("button", { name: tool, exact: true }).click();
   await page.getByRole("button", { name: `${color} color`, exact: true }).click();
   await page.getByRole("button", { name: "Guided apply", exact: true }).click();
@@ -238,8 +249,8 @@ test("an in-flight capture preserves the newest live appearance, paint, and pick
   expect(await livePixels(page)).toEqual(before);
   await expect(page.locator("#gesture-count")).toHaveText("1 gesture");
   await expect(page.locator("#saved-count")).toHaveText("0");
-  await expect(page.locator("#appearance-hairColor")).toHaveValue("blonde");
-  await expect(page.locator("#appearance-hairStyle")).toHaveValue("bun");
+  await expect(page.locator("#appearance-hairColor-blonde")).toBeChecked();
+  await expect(page.locator("#appearance-hairStyle-bun")).toBeChecked();
   await png(page, info, "live-appearance-after-rejected-save");
 });
 
@@ -249,13 +260,13 @@ test("late textures and Undo cannot overwrite the current appearance or admit pe
   await page.route("**/face/v2/maps/*", (route) => { pending.set(route.request().url().split("/").at(-1)!, route); });
   await page.addInitScript(() => localStorage.setItem("make1up.lookbook.v1", "untouched old bytes"));
   await open(page);
-  await page.locator("#appearance-complexion").selectOption("fair");
+  await choose(page, "complexion", "fair");
   await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "loading");
   for (const selector of ["#finish-button", "#save-button", "#share-button", "#download-button", "#guided-button"]) await expect(page.locator(selector)).toBeDisabled();
   await page.locator("#portrait-canvas").dispatchEvent("pointerdown", { button: 0, pointerId: 1, isPrimary: true, clientX: 200, clientY: 300 });
   await page.locator("#portrait-canvas").dispatchEvent("pointerup", { button: 0, pointerId: 1, isPrimary: true, clientX: 200, clientY: 300 });
   await expect(page.locator("#gesture-count")).toHaveText("0 gestures");
-  await page.locator("#appearance-complexion").selectOption("deep");
+  await choose(page, "complexion", "deep");
   for (const file of ["skin-deep.png", "bust-deep.png"]) {
     await expect.poll(() => pending.has(file)).toBe(true);
     await pending.get(file)!.continue(); pending.delete(file);
@@ -268,10 +279,10 @@ test("late textures and Undo cannot overwrite the current appearance or admit pe
   }
   await page.waitForLoadState("networkidle");
   expect(await difference(page, deep, await png(page, info, "delayed-fair-ignored"))).toBe(0);
-  await page.locator("#appearance-hairColor").selectOption("blonde");
+  await choose(page, "hairColor", "blonde");
   await expect.poll(() => pending.has("hair-blonde.png")).toBe(true);
   await page.getByRole("button", { name: "Undo last edit", exact: true }).click();
-  await expect(page.locator("#appearance-hairColor")).toHaveValue("espresso");
+  await expect(page.locator("#appearance-hairColor-espresso")).toBeChecked();
   await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "ready");
   await pending.get("hair-blonde.png")!.continue(); pending.delete("hair-blonde.png");
   await page.waitForLoadState("networkidle");
@@ -288,7 +299,7 @@ test("a failed color map is retryable without reloading or losing the look", asy
   await open(page);
   await guided(page, "Lipstick", "Plum");
   const original = await png(page, info, "before-color-retry");
-  await page.locator("#appearance-hairColor").selectOption("chestnut");
+  await choose(page, "hairColor", "chestnut");
   await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "error");
   await expect(page.locator("#finish-button")).toBeDisabled();
   await expect(page.locator("#gesture-count")).toHaveText("1 gesture");
@@ -296,7 +307,7 @@ test("a failed color map is retryable without reloading or losing the look", asy
   await page.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "ready");
   expect(attempts).toBe(2);
-  await expect(page.locator("#appearance-hairColor")).toHaveValue("chestnut");
+  await expect(page.locator("#appearance-hairColor-chestnut")).toBeChecked();
   const retried = await png(page, info, "after-color-retry");
   expect(await difference(page, original, retried, [300, 180, 780, 450])).toBeGreaterThan(1_000);
   expect(await difference(page, original, retried, [420, 820, 660, 940]), "Retry does not alter the existing lip paint").toBe(0);

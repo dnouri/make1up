@@ -17,7 +17,7 @@ import { analyzePaint, beginStroke, composePaint, createPaintMasks, paintStroke 
 import type { ChangedPaint, PaintAnalysis, PaintField, PaintMasks, StrokeTransaction } from "./paint";
 import { indexPortrait } from "./picking";
 import type { PortraitPicking } from "./picking";
-import type { Framing, PortraitPresentation } from "./session";
+import type { Framing, PortraitPresentation, Workspace } from "./session";
 
 export type AppearanceAvailability = Readonly<{ kind: "ready" | "loading" }>
   | Readonly<{ kind: "error"; message: string }>;
@@ -44,6 +44,7 @@ type PaintGesture = {
   dirty: boolean;
   paint: StrokeTransaction;
 };
+type CameraView = { framing: Framing; yaw: number; pitch: number; zoom: number };
 type PendingPaint = Readonly<{ before: Look; candidate: ChangedPaint }>;
 type Gesture = { kind: "idle" }
   | PaintGesture
@@ -298,7 +299,7 @@ export async function mountPortrait(
     for (const material of hairMaterials) material.roughness = 0.66;
 
     let presentation: PortraitPresentation = {
-      look: newLook(), brush: defaultBrush(), navigation: "paint", framing: "face", readonly: false,
+      look: newLook(), brush: defaultBrush(), workspace: "makeup", navigation: "paint", framing: "face", readonly: false,
     };
     let committed = composePaint([], masks);
     let displayed = committed;
@@ -317,9 +318,11 @@ export async function mountPortrait(
     let dirty = true;
     let contextLost = false;
     let hovered = false;
-    let yaw = 0;
-    let pitch = 0;
-    let zoom = 1;
+    const views: Record<Workspace, CameraView> = {
+      makeup: { framing: "face", yaw: 0, pitch: 0, zoom: 1 },
+      customize: { framing: "face", yaw: 0, pitch: 0, zoom: 1 },
+    };
+    let view = views.makeup;
     let width = 1;
     let height = 1;
     let floatTime = 0;
@@ -471,7 +474,7 @@ export async function mountPortrait(
       height = nextHeight;
       renderer.setPixelRatio(dpr);
       renderer.setSize(width, height, false);
-      frameCamera(presentation.framing, width / height, zoom);
+      frameCamera(view.framing, width / height, view.zoom);
     }
 
     function nearestFace(): Intersection | null {
@@ -581,11 +584,11 @@ export async function mountPortrait(
       if (gesture.kind !== "idle" && event.pointerId !== gesture.pointerId) return;
       if (gesture.kind === "turn") {
         event.preventDefault();
-        yaw = Math.max(-maxYaw, Math.min(maxYaw, yaw + (event.clientX - gesture.x) * 0.005));
-        pitch = Math.max(-maxPitch, Math.min(maxPitch, pitch + (event.clientY - gesture.y) * 0.004));
+        view.yaw = Math.max(-maxYaw, Math.min(maxYaw, view.yaw + (event.clientX - gesture.x) * 0.005));
+        view.pitch = Math.max(-maxPitch, Math.min(maxPitch, view.pitch + (event.clientY - gesture.y) * 0.004));
         gesture.x = event.clientX;
         gesture.y = event.clientY;
-        pivot.rotation.set(pitch, yaw, 0, "YXZ");
+        pivot.rotation.set(view.pitch, view.yaw, 0, "YXZ");
         dirty = true;
       } else if (presentation.navigation === "paint") {
         const draft = gesture.kind === "paint" ? gesture : null;
@@ -625,7 +628,7 @@ export async function mountPortrait(
     function present(next: PortraitPresentation): void {
       if (disposed) return;
       const previous = presentation;
-      if (next.look !== previous.look || next.readonly !== previous.readonly
+      if (next.look !== previous.look || next.readonly !== previous.readonly || next.workspace !== previous.workspace
         || next.navigation !== previous.navigation || next.framing !== previous.framing
         || !sameBrush(next.brush, previous.brush)) cancelGesture();
       if (next.look.strokes !== previous.look.strokes) {
@@ -644,12 +647,17 @@ export async function mountPortrait(
       }
       presentation = next;
       if (next.look.identity !== previous.look.identity) requestIdentity();
-      if (next.framing !== previous.framing || next.readonly !== previous.readonly) {
-        yaw = 0;
-        pitch = 0;
-        zoom = 1;
-        pivot.rotation.set(0, 0, 0);
-        frameCamera(next.framing, width / height, zoom);
+      view = views[next.workspace];
+      const framingChanged = view.framing !== next.framing;
+      if (framingChanged) {
+        view.framing = next.framing;
+        view.yaw = 0;
+        view.pitch = 0;
+        view.zoom = 1;
+      }
+      if (next.workspace !== previous.workspace || framingChanged) {
+        pivot.rotation.set(view.pitch, view.yaw, 0, "YXZ");
+        frameCamera(view.framing, width / height, view.zoom);
       }
       if (next.readonly || next.navigation !== "paint") hideCursor();
       refreshCursorStyle();
@@ -809,8 +817,8 @@ export async function mountPortrait(
       zoom(direction) {
         if (disposed) return;
         cancelGesture();
-        zoom = Math.max(1, Math.min(1.7, zoom * (direction === "in" ? 1.13 : 1 / 1.13)));
-        frameCamera(presentation.framing, width / height, zoom);
+        view.zoom = Math.max(1, Math.min(1.7, view.zoom * (direction === "in" ? 1.13 : 1 / 1.13)));
+        frameCamera(view.framing, width / height, view.zoom);
       },
       dispose() {
         if (disposed) return;

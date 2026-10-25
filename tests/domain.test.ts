@@ -155,6 +155,50 @@ describe("look boundary", () => {
 });
 
 describe("session transactions", () => {
+  it("switches workspaces without editing the look, history, deadline, or saved makeup controls", () => {
+    let session: Session = createSession(newLook(), { kind: "challenge", theme: "orchid-hour", deadline: 180_000 });
+    session = step(session, { type: "stroke", stroke: stroke("saved-paint") });
+    session = step(session, { type: "brush", brush: defaultBrush("lipstick") });
+    session = step(session, { type: "navigate", navigation: "turn" });
+    session = step(session, { type: "frame", framing: "lips" });
+    session = step(session, { type: "undo" });
+    const makeup = editing(session);
+    session = step(session, { type: "workspace", workspace: "customize" });
+    const customized = editing(session);
+    expect(customized.history).toBe(makeup.history);
+    expect(customized.mode).toBe(makeup.mode);
+    expect(customized.brush).toBe(makeup.brush);
+    expect([customized.framing, customized.navigation]).toEqual(["lips", "turn"]);
+    expect(presentSession(session)).toMatchObject({ workspace: "customize", readonly: true, framing: "face", navigation: "turn" });
+    for (const action of [
+      { type: "stroke", stroke: stroke("blocked") },
+      { type: "brush", brush: defaultBrush("blush") },
+      { type: "navigate", navigation: "paint" },
+      { type: "frame", framing: "eyes" },
+    ] as const) expect(step(session, action)).toBe(session);
+    session = step(session, { type: "workspace", workspace: "makeup" });
+    expect(editing(session).history).toBe(makeup.history);
+    expect(presentSession(session)).toMatchObject({ workspace: "makeup", readonly: false, framing: "lips", navigation: "turn", brush: makeup.brush });
+    session = step(session, { type: "redo" });
+    expect(editing(session).history.current.strokes.map((item) => item.id)).toEqual(["saved-paint"]);
+  });
+
+  it("uses the same identity history in customization and leaves it for the locked result", () => {
+    let session: Session = step(createSession(), { type: "workspace", workspace: "customize" });
+    const identity = { ...editing(session).history.current.identity, hairStyle: "bun" } as const;
+    session = step(session, { type: "identity", identity });
+    expect(editing(session).history.past).toHaveLength(1);
+    session = step(session, { type: "undo" });
+    expect(presentSession(session).look.identity.hairStyle).toBe("ponytail");
+    expect(presentSession(session).workspace).toBe("customize");
+    session = step(session, { type: "redo" });
+    expect(presentSession(session).look.identity.hairStyle).toBe("bun");
+    session = step(session, { type: "finish", id: "time-up", analysis });
+    expect(session.phase).toBe("reveal");
+    expect(presentSession(session)).toMatchObject({ workspace: "makeup", readonly: true, framing: "face", navigation: "turn", look: { identity } });
+    expect(step(session, { type: "workspace", workspace: "customize" })).toBe(session);
+  });
+
   it("makes one multi-path gesture one undo item and preserves old brush settings", () => {
     const gesture = value(captureStroke("both", defaultBrush("blush"), [[[0.2, 0.4]], [[0.8, 0.4]]]));
     let session: Session = step(createSession(), { type: "stroke", stroke: gesture });
@@ -244,7 +288,7 @@ describe("session transactions", () => {
     session = step(session, { type: "stroke", stroke: stroke("accepted") });
     const frame = presentSession(session);
     expect([frame.readonly, frame.framing, frame.navigation, frame.look.strokes[0]?.id]).toEqual([false, "lips", "paint", "accepted"]);
-    expect(Object.keys(frame).sort()).toEqual(["brush", "framing", "look", "navigation", "readonly"]);
+    expect(Object.keys(frame).sort()).toEqual(["brush", "framing", "look", "navigation", "readonly", "workspace"]);
     session = step(session, { type: "finish", id: "practice", analysis });
     if (session.phase !== "reveal") throw new Error("Expected reveal.");
     expect(session.submission.outcome).toEqual({ kind: "practice" });
