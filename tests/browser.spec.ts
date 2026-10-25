@@ -176,7 +176,7 @@ test("phone correction stays beside the portrait through precision work and fini
   };
   await assertWorkspace();
   await expect(page.locator("#quick-active-tool")).toHaveText("Blush");
-  await expect(page.locator("#allowed-region")).toHaveText("Cheeks only");
+  await expect(page.locator("#allowed-region")).toHaveText("Anywhere on the paintable face");
   await page.screenshot({ path: info.outputPath("continuity-initial.png") });
   await quickSize.focus();
   await page.keyboard.press("ArrowRight");

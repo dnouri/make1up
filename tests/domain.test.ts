@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendStroke, brushFromInput, captureStroke, catalog, decodeLook, decodeLookJSON,
   defaultBrush, encodeLook, identityFromInput, lookFingerprint, newLook, palette, regions,
-  themes, tools,
+  themes, toolRegion, tools,
 } from "../src/look";
 import type { Brush, Look, Result, Stroke, UV } from "../src/look";
 import { createSession, presentSession, step } from "../src/session";
@@ -38,7 +38,7 @@ describe("look boundary", () => {
     brush.color = "#000000";
     paths[0]?.push([0, 0]);
     expect(captured).toEqual({
-      id: "gesture-a",
+      id: "gesture-a", policy: "face-v2",
       brush: { tool: "blush", color: "#cc5075", radius: 0.045, opacity: 0.55, softness: 0.85, finish: 0 },
       paths: [[[0.2, 0.4], [0.4, 0.4]], [[0.8, 0.4], [0.6, 0.4]]],
     });
@@ -58,7 +58,7 @@ describe("look boundary", () => {
 
   it("rejects corrupt JSON, unknown versions, assets, catalogs, and duplicate IDs", () => {
     expect(decodeLookJSON("{")).toEqual({ ok: false, error: "The saved look is not valid JSON." });
-    expect(decodeLook({ ...newLook(), version: 3 })).toEqual({ ok: false, error: "This look has an unknown version or portrait asset." });
+    expect(decodeLook({ ...newLook(), version: 4 })).toEqual({ ok: false, error: "This look has an unknown version or portrait asset." });
     expect(decodeLook({ ...newLook(), asset: "invented-face" })).toEqual({ ok: false, error: "This look has an unknown version or portrait asset." });
     expect(identityFromInput({ ...newLook().identity, geometry: "sculpted-heart" })).toEqual({ ok: false, error: "Unknown portrait appearance option." });
     expect(decodeLook({ ...newLook(), strokes: [stroke("same"), stroke("same")] })).toEqual({ ok: false, error: "A saved look repeats a gesture ID." });
@@ -139,7 +139,9 @@ describe("look boundary", () => {
       if (parsed.ok) {
         const brush = defaultBrush(parsed.value.tool);
         expect(brushFromInput(brush)).toEqual({ ok: true, value: brush });
-        expect(Object.hasOwn(regions, tools[brush.tool].region)).toBe(true);
+        for (const policy of ["regional-v1", "face-v2"] as const) {
+          expect(Object.hasOwn(regions, toolRegion(brush.tool, policy))).toBe(true);
+        }
       }
     }
     for (const theme of Object.values(themes)) {
@@ -157,7 +159,7 @@ describe("look boundary", () => {
           for (const hairColor of Object.keys(catalog.hairColors)) {
             for (const hairStyle of Object.keys(catalog.hairStyles)) {
               const parsed = identityFromInput({ geometry, eyes, complexion, hairColor, hairStyle });
-              expect(parsed).toEqual({ ok: true, value: { geometry, eyes, complexion, hairColor, hairStyle } });
+              expect(parsed).toEqual({ ok: true, value: { kind: "classic", geometry, eyes, complexion, hairColor, hairStyle } });
             }
           }
         }

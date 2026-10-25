@@ -7,8 +7,9 @@ import {
 import type { BufferGeometry, Intersection, Material, WebGLRenderTarget } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-import { captureStroke, catalog, defaultBrush, limits, newLook, regions, tools } from "./look";
-import type { Brush, Identity, Look, Stroke, UV } from "./look";
+import { captureStroke, catalog, defaultBrush, limits, newLook, regions, toolRegion, tools } from "./look";
+import type { Brush, Look, Stroke, UV } from "./look";
+import type { PortraitIdentity } from "./avatar";
 import { analyzePaint, beginStroke, composePaint, createPaintMasks, paintStroke } from "./paint";
 import type { ChangedPaint, PaintAnalysis, PaintField, PaintMasks, StrokeTransaction } from "./paint";
 import { indexPortrait } from "./picking";
@@ -28,7 +29,6 @@ type PaintGesture = {
   pointerId: number;
   id: string;
   brush: Brush;
-  algorithm: Stroke["algorithm"];
   paths: UV[][];
   activePaths: [number | null, number | null];
   points: number;
@@ -325,7 +325,8 @@ export async function mountPortrait(
       dirty = true;
     }
 
-    function applyIdentity(identity: Identity): void {
+    function applyIdentity(identity: PortraitIdentity): void {
+      if (identity.kind !== "classic") throw new Error("This studio cannot display the new portrait yet.");
       for (const material of [skin, bustSkin]) {
         material.color.copy(sourceColors.get(material) ?? new Color(0xffffff))
           .multiply(new Color(catalog.complexions[identity.complexion].tint));
@@ -386,7 +387,7 @@ export async function mountPortrait(
       const candidate = paint.finish(stroke);
       if (candidate.kind === "unchanged") {
         const tool = tools[stroke.brush.tool];
-        onError(`${tool.label} changed no makeup on the ${regions[tool.region].label.toLowerCase()}.`);
+        onError(`${tool.label} changed no makeup on the ${regions[toolRegion(stroke.brush.tool, stroke.policy)].label.toLowerCase()}.`);
         return false;
       }
       const previousLook = presentation.look;
@@ -508,7 +509,6 @@ export async function mountPortrait(
       } else {
         gesture = {
           kind: "paint", pointerId: event.pointerId, id: crypto.randomUUID(), brush: presentation.brush,
-          algorithm: presentation.brush.tool === "blend" ? "soften-v1" : undefined,
           paths: [], activePaths: [null, null], points: 0, dirty: false, paint: beginStroke(committed, masks),
         };
         sample(event, gesture);
@@ -550,7 +550,7 @@ export async function mountPortrait(
         cancelGesture();
         return;
       }
-      const stroke = captureStroke(completed.id, completed.brush, completed.paths, completed.algorithm);
+      const stroke = captureStroke(completed.id, completed.brush, completed.paths);
       if (stroke.ok) applyStroke(stroke.value);
       else {
         cancelGesture();
@@ -565,6 +565,7 @@ export async function mountPortrait(
 
     function present(next: PortraitPresentation): void {
       if (disposed) return;
+      if (next.look.asset !== "rain-portrait-v1") throw new Error("This studio cannot display the new portrait yet.");
       const previous = presentation;
       if (next.look !== previous.look || next.readonly !== previous.readonly
         || next.navigation !== previous.navigation || next.framing !== previous.framing
@@ -599,6 +600,7 @@ export async function mountPortrait(
 
     async function capture(look: Look): Promise<Blob> {
       if (disposed || contextLost) throw new Error("The portrait is not available for export.");
+      if (look.asset !== "rain-portrait-v1") throw new Error("This studio cannot display the new portrait yet.");
       const output = document.createElement("canvas");
       output.width = 1080;
       output.height = 1350;
@@ -660,7 +662,7 @@ export async function mountPortrait(
         if (gesture.kind === "paint" && gesture.dirty) {
           gesture.dirty = false;
           if (gesture.points > 0) {
-            const draft = captureStroke(gesture.id, gesture.brush, gesture.paths, gesture.algorithm);
+            const draft = captureStroke(gesture.id, gesture.brush, gesture.paths);
             if (draft.ok) {
               const preview = gesture.paint.update(draft.value);
               if (preview !== null) showField(preview);

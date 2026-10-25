@@ -1,4 +1,4 @@
-import { palette, themes, tools } from "./look";
+import { palette, themes, toolRegion, tools } from "./look";
 import type { Criterion, PaletteId, Region, Result, Stroke, StrokePath, Theme, ThemeId } from "./look";
 
 export type PaintMasks = Readonly<{
@@ -145,6 +145,7 @@ function drawTip(
 ): void {
   const { size } = masks;
   const tool = tools[stroke.brush.tool];
+  const hardRegion = toolRegion(stroke.brush.tool, stroke.policy);
   const radius = stroke.brush.radius * size;
   const centerX = u * size;
   const centerY = v * size;
@@ -167,7 +168,7 @@ function drawTip(
       if (strength <= 0) continue;
       const index = y * size + x;
       const valid = (masks.valid[index] ?? 0) / 255;
-      const region = tool.region === "valid" ? 1 : (masks[tool.region][index] ?? 0) / 255;
+      const region = hardRegion === "valid" ? 1 : (masks[hardRegion][index] ?? 0) / 255;
       const amount = Math.round(strength * valid * region * 255);
       if (stroke.algorithm === "soften-v1") {
         if (amount === 0) continue;
@@ -475,7 +476,7 @@ function softenStroke(field: PaintField, source: PaintField, stroke: Stroke, mas
 function extendsStroke(previous: Stroke, next: Stroke): boolean {
   const a = previous.brush;
   const b = next.brush;
-  return previous.id === next.id && previous.algorithm === next.algorithm && a.tool === b.tool && a.color === b.color
+  return previous.id === next.id && previous.policy === next.policy && previous.algorithm === next.algorithm && a.tool === b.tool && a.color === b.color
     && a.radius === b.radius && a.opacity === b.opacity && a.softness === b.softness && a.finish === b.finish
     && previous.paths.length <= next.paths.length
     && previous.paths.every((path, index) => {

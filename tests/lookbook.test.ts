@@ -49,10 +49,10 @@ describe("local lookbook", () => {
     expect(read.value.map((entry) => ({ title: entry.title, savedAt: entry.savedAt, thumbnail: entry.thumbnail, look: entry.look }))).toEqual([{
       title: "My orchid look", savedAt: 1_760_587_200_000, thumbnail,
       look: {
-        version: 1, asset: "rain-portrait-v1",
-        identity: { geometry: "neutral-rain", eyes: "blue", complexion: "source", hairColor: "espresso", hairStyle: "ponytail" },
+        version: 3, asset: "rain-portrait-v1",
+        identity: { kind: "classic", geometry: "neutral-rain", eyes: "blue", complexion: "source", hairColor: "espresso", hairStyle: "ponytail" },
         strokes: [{
-          id: "first-cheek",
+          id: "first-cheek", policy: "face-v2",
           brush: { tool: "blush", color: "#cc5075", radius: 0.045, opacity: 0.55, softness: 0.85, finish: 0 },
           paths: [[[16384 / 65535, 42598 / 65535], [18350 / 65535, 41942 / 65535]]],
         }],
@@ -114,7 +114,7 @@ describe("local lookbook", () => {
     expect(readLookbook(storage)).toEqual({ ok: false, error: "The local lookbook is too large to open safely. Your current look is unchanged." });
     storage.raw = null;
     save(storage);
-    storage.raw = storage.raw!.replace(/rain-v1-[0-9a-f]{16}/, "rain-v1-0000000000000000");
+    storage.raw = storage.raw!.replace(/rain-v3-[0-9a-f]{16}/, "rain-v3-0000000000000000");
     expect(readLookbook(storage)).toEqual({ ok: false, error: "A saved look has a damaged content ID. Nothing was replaced." });
   });
 
@@ -146,7 +146,7 @@ describe("private share fragments", () => {
     const decoded = await decodeShare(encoded.value);
     expect(decoded.ok && decoded.value).toEqual({
       version: 1, asset: "rain-portrait-v1",
-      identity: { geometry: "neutral-rain", eyes: "blue", complexion: "source", hairColor: "espresso", hairStyle: "ponytail" },
+      identity: { kind: "classic", geometry: "neutral-rain", eyes: "blue", complexion: "source", hairColor: "espresso", hairStyle: "ponytail" },
       strokes: [],
     });
   });

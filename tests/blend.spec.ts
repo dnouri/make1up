@@ -175,10 +175,10 @@ test("four passes in one native Blend gesture soften an Ink stripe more than one
       return await new Response(stream).text();
     }, payload)
     : new TextDecoder().decode(payload);
-  const document: { version: number; strokes: { brush: { tool: string }; algorithm?: string }[] } = JSON.parse(text);
-  expect(document.version).toBe(2);
-  expect(document.strokes.map((item) => [item.brush.tool, item.algorithm ?? null])).toEqual([
-    ["liner", null], ["blend", "soften-v1"],
+  const document: { version: number; strokes: { brush: { tool: string }; policy: string; algorithm?: string }[] } = JSON.parse(text);
+  expect(document.version).toBe(3);
+  expect(document.strokes.map((item) => [item.brush.tool, item.policy, item.algorithm ?? null])).toEqual([
+    ["liner", "face-v2", null], ["blend", "face-v2", "soften-v1"],
   ]);
   await page.goto(url);
   await expect(page.locator("#app-status")).toHaveText("Shared look opened. These are the original UV strokes, ready for your remix.");

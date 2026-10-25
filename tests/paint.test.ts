@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appendStroke, captureStroke, defaultBrush, newLook, withIdentity } from "../src/look";
+import { appendStroke, captureStroke, decodeLook, defaultBrush, defaultIdentity, newLook, withIdentity } from "../src/look";
 import type { Brush, Result, Stroke, ToolId, UV } from "../src/look";
 import { analyzePaint, assess, composePaint, createPaintMasks, paintStroke, strokeChanges } from "../src/paint";
 import type { PaintField, PaintMasks } from "../src/paint";
@@ -30,6 +30,12 @@ function stroke(id: string, tool: ToolId, changes: Partial<Brush> = {}, point: U
   }, [[point]]));
 }
 
+function legacyStroke(stroke: Stroke): Stroke {
+  return value(decodeLook({
+    ...newLook(), strokes: [{ id: stroke.id, brush: stroke.brush, paths: stroke.paths }],
+  })).strokes[0]!;
+}
+
 function pixel(field: PaintField, x: number, y: number): number[] {
   return Array.from(field.rgba.slice((y * field.size + x) * 4, (y * field.size + x) * 4 + 4));
 }
@@ -54,10 +60,14 @@ describe("final makeup field", () => {
     expect(mark.paths).toEqual([[[32768 / 65535, 32768 / 65535]]]);
   });
 
-  it("restricts each regional tool without restricting correction tools to lips", () => {
+  it("allows new blush and eyeshadow across the face but keeps lipstick on lips", () => {
     const input = masks();
-    const wrongBlush = composePaint([stroke("wrong", "blush")], input);
-    expect(analyzePaint(wrongBlush, input).alphaMass).toBe(0);
+    const fullBlush = composePaint([stroke("full", "blush")], input);
+    expect(pixel(fullBlush, 7, 7)).toEqual([204, 80, 117, 255]);
+    const fullShadow = composePaint([stroke("full", "shadow")], input);
+    expect(pixel(fullShadow, 7, 7)).toEqual([167, 100, 203, 255]);
+    const cheekShadow = composePaint([stroke("cheek", "shadow", {}, [5 / 16, 0.5])], input);
+    expect(pixel(cheekShadow, 4, 7)).toEqual([167, 100, 203, 255]);
     const cheek = composePaint([stroke("cheek", "blush", {}, [5 / 16, 0.5])], input);
     expect(pixel(cheek, 4, 7)).toEqual([204, 80, 117, 255]);
     const lid = composePaint([stroke("lid", "shadow", {}, [0.5, 5 / 16])], input);
@@ -113,13 +123,13 @@ describe("final makeup field", () => {
     expect(assess("rose-editorial", analyzePaint(painted, input)).total).toBe(45);
   });
 
-  it("blends existing pigment and alpha instead of painting the chosen color", () => {
+  it("replays untagged historical Blend without painting its saved color", () => {
     const input = masks();
     const dot = stroke("dot", "liner", { color: "#cc5075", radius: 0.04, finish: 0.4 }, [7.5 / 16, 7.5 / 16]);
     const initial = composePaint([dot], input);
     expect(pixel(initial, 7, 7)).toEqual([204, 80, 117, 255]);
     expect(pixel(initial, 8, 7)).toEqual([0, 0, 0, 0]);
-    const blended = paintStroke(initial, stroke("blend", "blend", { color: "#00ff00" }), input);
+    const blended = paintStroke(initial, legacyStroke(stroke("blend", "blend", { color: "#00ff00" })), input);
     expect(pixel(blended, 7, 7)).toEqual([204, 80, 117, 64]);
     expect(pixel(blended, 8, 7)).toEqual([204, 80, 117, 32]);
     expect(pixel(blended, 8, 8)).toEqual([204, 80, 117, 16]);
@@ -292,7 +302,7 @@ describe("final field analysis", () => {
 
 describe("exact stroke effect", () => {
   it.each([
-    ["region-rejected blush", "blush", {}],
+    ["zero-opacity blush", "blush", { opacity: 0 }],
     ["zero opacity pigment", "lipstick", { opacity: 0 }],
     ["erase on blank", "erase", {}],
     ["blend on blank", "blend", {}],
@@ -333,7 +343,7 @@ describe("exact stroke effect", () => {
       }
     }
     const field = Object.freeze({ size: 16, rgba, finish: new Uint8Array(256) });
-    const blend = stroke("redistribute", "blend");
+    const blend = legacyStroke(stroke("redistribute", "blend"));
     const changed = paintStroke(field, blend, input);
     expect(pixel(field, 7, 7)).toEqual([23, 20, 36, 4]);
     expect(pixel(field, 8, 7)).toEqual([23, 20, 36, 252]);
@@ -426,7 +436,7 @@ describe("published solo briefs", () => {
   it("ignores complexion, eyes, and hair for a fixed final makeup field", () => {
     const input = masks();
     const base = value(appendStroke(newLook(), stroke("lip", "lipstick")));
-    const changed = withIdentity(base, { ...base.identity, complexion: "deep", eyes: "olive", hairColor: "plum", hairStyle: "short" });
+    const changed = withIdentity(base, { ...defaultIdentity, complexion: "deep", eyes: "olive", hairColor: "plum", hairStyle: "short" });
     const first = assess("rose-editorial", analyzePaint(composePaint(base.strokes, input), input));
     const second = assess("rose-editorial", analyzePaint(composePaint(changed.strokes, input), input));
     expect(first.total).toBe(45);

@@ -222,9 +222,28 @@ async function paintPolicy(source) {
     'Each paint policy registry must be declared exactly once.');
   const declaration = declarations.find((item) => item.name.text === 'tools');
   assert(declaration?.initializer, 'The exported tool registry is required.');
+  const approvedRegions = {
+    blush: { 'regional-v1': 'cheeks', 'face-v2': 'valid' },
+    shadow: { 'regional-v1': 'lids', 'face-v2': 'valid' },
+    lipstick: { 'regional-v1': 'lips', 'face-v2': 'lips' },
+    liner: { 'regional-v1': 'valid', 'face-v2': 'valid' },
+    sparkle: { 'regional-v1': 'valid', 'face-v2': 'valid' },
+    erase: { 'regional-v1': 'valid', 'face-v2': 'valid' },
+    blend: { 'regional-v1': 'valid', 'face-v2': 'valid' },
+  };
   const ignoredValues = new Set();
+  const legacyRegions = new Map();
   for (const tool of properties(declaration.initializer)) {
-    const defaults = properties(tool.initializer).find((property) => property.name.text === 'defaults');
+    const fields = properties(tool.initializer);
+    const region = fields.find((property) => property.name.text === 'region');
+    assert(region && Object.hasOwn(approvedRegions, tool.name.text), 'Every tool needs an approved versioned region.');
+    if (ts.isStringLiteral(region.initializer)) {
+      const approved = approvedRegions[tool.name.text];
+      assert.equal(region.initializer.text, approved['regional-v1'], 'The frozen legacy region must remain unchanged.');
+      legacyRegions.set(region.initializer, ts.factory.createObjectLiteralExpression(Object.entries(approved).map(([policy, area]) =>
+        ts.factory.createPropertyAssignment(ts.factory.createStringLiteral(policy), ts.factory.createStringLiteral(area)))));
+    }
+    const defaults = fields.find((property) => property.name.text === 'defaults');
     assert(defaults, `Missing defaults for ${tool.name.text}.`);
     const settings = properties(defaults.initializer);
     assert.deepEqual(settings.map((property) => property.name.text).toSorted(), ['color', 'finish', 'opacity', 'radius', 'softness']);
@@ -239,12 +258,13 @@ async function paintPolicy(source) {
     }
   }
   const transformed = ts.transform(ts.factory.updateSourceFile(file, statements), [(context) => {
-    const visit = (node) => ignoredValues.has(node) ? ts.factory.createNull() : ts.visitEachChild(node, visit, context);
+    const visit = (node) => ignoredValues.has(node) ? ts.factory.createNull()
+      : legacyRegions.get(node) ?? ts.visitEachChild(node, visit, context);
     return (node) => ts.visitNode(node, visit);
   }]);
   const structure = ts.createPrinter({ removeComments: true }).printFile(transformed.transformed[0]);
   transformed.dispose();
-  const compiled = ts.transpileModule(source, { fileName: 'look.ts', reportDiagnostics: true,
+  const compiled = ts.transpileModule(structure, { fileName: 'look.ts', reportDiagnostics: true,
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } });
   assert.equal(compiled.diagnostics?.length, 0, 'The look policy must transpile.');
   const exported = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputText).toString('base64')}`);
@@ -258,7 +278,7 @@ async function paintPolicy(source) {
 
 export async function assertPaintPolicy(original, current) {
   assert.deepEqual(await paintPolicy(original), await paintPolicy(current),
-    'The original and current paint policy must match except tool interaction defaults.');
+    'The approved versioned paint policy must match except tool interaction defaults.');
 }
 
 function analyzePaintSegments(source) {
@@ -319,17 +339,19 @@ async function selfCheck() {
     ['color: "#cc5075"', 'color: "#000000"'],
     ['cheeks: { label: "Cheeks" }', 'cheeks: { label: "Changed cheeks" }'],
     ['minimumCoverage: 0.005', 'minimumCoverage: 0.01'],
-    ['operation: "pigment", region: "cheeks"', 'operation: "erase", region: "cheeks"'],
-    ['region: "cheeks", tip: "round"', 'region: "valid", tip: "round"'],
+    ['operation: "pigment", region:', 'operation: "erase", region:'],
+    ['"regional-v1": "cheeks"', '"regional-v1": "valid"'],
+    ['"face-v2": "valid"', '"face-v2": "cheeks"'],
+    ['"face-v2": "lips"', '"face-v2": "valid"'],
     ['tip: "round", placement: "continuous"', 'tip: "star", placement: "continuous"'],
     ['tip: "round", placement: "continuous"', 'tip: "round", placement: "stamp"'],
   ];
   for (const [before, after] of policyChanges) {
     assert(currentLook.includes(before), `Missing self-check input ${before}.`);
     await assert.rejects(assertPaintPolicy(look, currentLook.replace(before, after)),
-      /The original and current paint policy must match/);
+      /The approved versioned paint policy must match/);
   }
-  console.log('Analysis source self-check passed. Frozen hashes, analyzer graft, current API, allowed defaults, and palette/region/theme/tool policy rejection verified. No builds or browsers.');
+  console.log('Analysis source self-check passed. Frozen hashes, analyzer graft, current API, allowed defaults, and approved regional-v1/face-v2 policy verified. Both isolated apps use the current painter and versioned policy. No builds, browsers, or performance measurements.');
 }
 
 async function isolate(baselinePath) {
@@ -339,7 +361,7 @@ async function isolate(baselinePath) {
   assert(output.startsWith(allowed), `--out must be a new child of ${allowed}`);
   await fs.mkdir(output, { recursive: true });
   const sourceHashes = { src: await hashes(path.join(root, 'src')), public: await hashes(path.join(root, 'public')),
-    index: sha256(await fs.readFile(path.join(root, 'index.html'))) };
+    art: await hashes(path.join(root, 'art')), index: sha256(await fs.readFile(path.join(root, 'index.html'))) };
   const sharedDist = await hashes(path.join(root, 'dist'));
   const log = [];
   for (const side of sides) {
@@ -349,6 +371,7 @@ async function isolate(baselinePath) {
     await fs.mkdir(side.source, { recursive: true });
     await fs.cp(path.join(root, 'src'), path.join(side.source, 'src'), { recursive: true });
     await fs.cp(path.join(root, 'public'), path.join(side.source, 'public'), { recursive: true });
+    await fs.cp(path.join(root, 'art'), path.join(side.source, 'art'), { recursive: true });
     await fs.copyFile(path.join(root, 'index.html'), path.join(side.source, 'index.html'));
     await fs.copyFile(path.join(root, 'package.json'), path.join(side.source, 'package.json'));
     await fs.symlink(path.join(root, 'node_modules'), path.join(side.source, 'node_modules'), 'dir');
@@ -512,15 +535,15 @@ async function capturedLook(page) {
   const guide = (name) => asset.landmarks[name].paintUV;
   const quantize = (paths) => paths.map((points) => points.map((uv) => uv.map((value) => Math.round(value * 65535) / 65535)));
   const expected = {
-    version: 1, asset: 'rain-portrait-v1',
-    identity: { geometry: 'neutral-rain', eyes: 'blue', complexion: 'source', hairColor: 'espresso', hairStyle: 'ponytail' },
+    version: 3, asset: 'rain-portrait-v1',
+    identity: { kind: 'classic', geometry: 'neutral-rain', eyes: 'blue', complexion: 'source', hairColor: 'espresso', hairStyle: 'ponytail' },
     strokes: [
-      { brush: { tool: 'blush', color: '#cc5075', radius: 0.06, opacity: 0.6, softness: 0.45, finish: 0.4 },
+      { policy: 'face-v2', brush: { tool: 'blush', color: '#cc5075', radius: 0.06, opacity: 0.6, softness: 0.45, finish: 0.4 },
         paths: quantize(['cheekLeft', 'cheekRight'].map((name) => {
           const [u, v] = guide(name);
           return [[u - 0.016, v], [u, v], [u + 0.016, v]];
         })) },
-      { brush: { tool: 'lipstick', color: '#cc5075', radius: 0.04, opacity: 0.6, softness: 0.3, finish: 0.4 },
+      { policy: 'face-v2', brush: { tool: 'lipstick', color: '#cc5075', radius: 0.04, opacity: 0.6, softness: 0.3, finish: 0.4 },
         paths: quantize([[guide('lipsRightCorner'), guide('lipsCenter'), guide('lipsLeftCorner')]]) },
     ],
   };
@@ -828,10 +851,11 @@ async function main() {
     const cleaned = await cleanup(owned, browser, pids);
     cleaned.sourceUntouched = JSON.stringify(source.sourceHashes.src) === JSON.stringify(await hashes(path.join(root, 'src')));
     cleaned.publicUntouched = JSON.stringify(source.sourceHashes.public) === JSON.stringify(await hashes(path.join(root, 'public')));
+    cleaned.artUntouched = JSON.stringify(source.sourceHashes.art) === JSON.stringify(await hashes(path.join(root, 'art')));
     cleaned.indexUntouched = source.sourceHashes.index === sha256(await fs.readFile(path.join(root, 'index.html')));
     cleaned.sharedDistUntouched = JSON.stringify(source.sharedDist) === JSON.stringify(await hashes(path.join(root, 'dist')));
     await json('cleanup.json', cleaned);
-    assert(cleaned.sourceUntouched && cleaned.publicUntouched && cleaned.indexUntouched && cleaned.sharedDistUntouched, 'Shared source, public, index, or dist changed during this run.');
+    assert(cleaned.sourceUntouched && cleaned.publicUntouched && cleaned.artUntouched && cleaned.indexUntouched && cleaned.sharedDistUntouched, 'Shared source, public, art, index, or dist changed during this run.');
     assert(cleaned.previews.every((item) => !item.alive && item.portReleased), 'An owned preview was not cleaned.');
     assert(cleaned.browserProcesses.every((item) => !item.alive), 'An owned browser process remains alive.');
   }

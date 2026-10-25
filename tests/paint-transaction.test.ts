@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { appendStroke, captureStroke, defaultBrush, encodeLook, limits, newLook, tools, withIdentity } from "../src/look";
-import type { Brush, Result, Stroke, ToolId, UV } from "../src/look";
+import { appendStroke, captureStroke, decodeLook, defaultBrush, encodeLook, limits, newLook, tools, withIdentity } from "../src/look";
+import type { Brush, Look, Result, Stroke, ToolId, UV } from "../src/look";
+import { defaultAvatarIdentity } from "../src/avatar";
 import { analyzePaint, beginStroke, composePaint, createPaintMasks, paintStroke } from "../src/paint";
 import type { ChangedPaint, FinishedPaint, PaintField, PaintMasks } from "../src/paint";
 import { composePaint as frozenCompose, paintStroke as frozenPaint } from "../benchmarks/analysis-baseline/paint";
@@ -27,9 +28,10 @@ function softMasks(size: number): PaintMasks {
 }
 
 function mark(id: string, tool: ToolId = "liner", changes: Partial<Brush> = {}, paths: readonly (readonly UV[])[] = [[[0.5, 0.5]]]): Stroke {
-  return value(captureStroke(id, {
+  const stroke = value(captureStroke(id, {
     ...defaultBrush(tool), radius: 0.08, opacity: 1, softness: 0, ...changes,
   }, paths));
+  return value(decodeLook({ ...newLook(), strokes: [{ id, brush: stroke.brush, paths: stroke.paths }] })).strokes[0]!;
 }
 
 function pixel(field: PaintField, x: number, y: number): number[] {
@@ -476,7 +478,7 @@ describe("portrait transaction admission without a browser", () => {
     callback(16);
   }
 
-  async function studio(look = newLook()) {
+  async function studio(look: Look = newLook()) {
     const canvas = new TestCanvas();
     const errors: string[] = [];
     const offers: Stroke[] = [];
@@ -556,6 +558,30 @@ describe("portrait transaction admission without a browser", () => {
     expect(app.session.history.future).toHaveLength(1);
     app.dispatch({ type: "redo" });
     expectField(displayedField(), frozenCompose([paint], input));
+  });
+
+  it("uses the stroke policy in no-effect notices", async () => {
+    const app = await studio();
+    const regional = mark("regional", "blush", { opacity: 0 });
+    expect(app.portrait.applyStroke(regional)).toBe(false);
+    expect(app.errors.at(-1)).toBe("Blush changed no makeup on the cheeks.");
+    const fullFace = value(captureStroke("full-face", regional.brush, regional.paths));
+    expect(app.portrait.applyStroke(fullFace)).toBe(false);
+    expect(app.errors.at(-1)).toBe("Blush changed no makeup on the paintable face.");
+    expect(presentSession(app.session).look.version).toBe(1);
+    expect(app.offers).toEqual([]);
+  });
+
+  it("refuses the unintegrated custom revision without changing classic paint", async () => {
+    const app = await studio();
+    const paint = mark("paint", "liner", { radius: 0.01 });
+    expect(app.portrait.applyStroke(paint)).toBe(true);
+    const expected = composePaint([paint], input);
+    const custom = newLook(defaultAvatarIdentity);
+    expect(() => app.portrait.present({ ...presentSession(app.session), look: custom })).toThrow("This studio cannot display the new portrait yet.");
+    await expect(app.portrait.capture(custom)).rejects.toThrow("This studio cannot display the new portrait yet.");
+    expectField(displayedField(), expected);
+    expect(app.portrait.analyze()).toEqual(analyzePaint(expected, input));
   });
 
   it("Guided apply replaces a pointer draft instead of adopting its unrelated coverage", async () => {
@@ -676,7 +702,7 @@ describe("portrait transaction admission without a browser", () => {
     if (app.session.phase !== "editing") throw new Error("Expected editing.");
     expect(app.session.history.current.strokes).toEqual([existing]);
     expect(app.session.notice).toBe("That gesture was already applied.");
-    let full = newLook();
+    let full: Look = newLook();
     for (let index = 0; index < limits.strokes; index += 1) full = value(appendStroke(full, mark(`limit-${index}`, "liner", { opacity: 0 })));
     app.dispatch({ type: "load", look: full });
     expect(app.portrait.applyStroke(mark("too-many"))).toBe(false);
