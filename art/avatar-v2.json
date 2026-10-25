@@ -6,7 +6,7 @@
     "blend": "tmp/asset-research/assets/Rain v3.3/rain_v3.2.blend",
     "archive": "tmp/asset-research/assets/rain-v33.zip",
     "archiveSha256": "80217f163f6392dc829233d63c2cfb5e1376775bc34101ad14f39631fea70d24",
-    "neutral": "public/face/v1/head.glb",
+    "neutral": "art/neutral/head.glb",
     "license": "CC-BY-4.0",
     "credit": "Rain Rig (CC) Blender Foundation | studio.blender.org"
   },
@@ -48,9 +48,9 @@
       "deep": {"label": "Deep", "faceMap": "maps/skin-deep.png", "bustMap": "maps/bust-deep.png", "recipe": {"skinLinear": [0.058, 0.025, 0.017], "lipLinear": [0.062, 0.019, 0.019]}}
     },
     "eyes": {
-      "blue": {"label": "Blue", "map": "maps/eyes-blue.png", "source": "public/face/v1/eyes-blue.png"},
-      "hazel": {"label": "Hazel", "map": "maps/eyes-hazel.png", "source": "public/face/v1/eyes-hazel.png"},
-      "olive": {"label": "Olive", "map": "maps/eyes-olive.png", "source": "public/face/v1/eyes-olive.png"}
+      "blue": {"label": "Blue", "map": "maps/eyes-blue.png", "source": "art/neutral/eyes-blue.png"},
+      "hazel": {"label": "Hazel", "map": "maps/eyes-hazel.png", "source": "art/neutral/eyes-hazel.png"},
+      "olive": {"label": "Olive", "map": "maps/eyes-olive.png", "source": "art/neutral/eyes-olive.png"}
     },
     "hairColor": {
       "espresso": {"label": "Espresso", "map": "maps/hair-espresso.png", "browLinear": [0.023, 0.012, 0.009], "recipe": {"copySource": true}},
@@ -133,8 +133,8 @@
       }
     },
     "skin": {
-      "sourceFace": "public/face/v1/skin-base.png",
-      "sourceBust": "public/face/v1/bust-base.png",
+      "sourceFace": "art/neutral/skin-base.png",
+      "sourceBust": "art/neutral/bust-base.png",
       "referenceLinear": [0.246, 0.148, 0.079],
       "detailRatioPower": 0.95,
       "localChromaStrength": 0.65,
@@ -142,7 +142,7 @@
       "lipUvRadius": [0.062, 0.047]
     },
     "hair": {
-      "source": "public/face/v1/hair-espresso.png",
+      "source": "art/neutral/hair-espresso.png",
       "luminancePercentiles": [2, 98],
       "bun": {
         "center": [0, 0.459, -0.031],

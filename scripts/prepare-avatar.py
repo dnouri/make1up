@@ -1,11 +1,10 @@
-"""Build the temporary Rain avatar proof without rewriting the frozen v1 asset.
+"""Build the Rain v2 distribution or its temporary artwork proof.
 
 blender --background --factory-startup --disable-autoexec --threads 4 \
     --python-exit-code 1 --python scripts/prepare-avatar.py -- --render
 """
 import argparse
 import hashlib
-import importlib.util
 import itertools
 import json
 import math
@@ -17,13 +16,14 @@ from pathlib import Path
 
 import bpy
 import numpy as np
-from mathutils import Vector
+from mathutils import Matrix, Vector
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 PROOF = ROOT / "tmp/avatar-customization/asset-proof"
+PUBLIC = ROOT / "public/face/v2"
+NEUTRAL = ROOT / "art/neutral"
 FEATURES = ("face", "nose", "mouth", "eyeShape")
-sys.dont_write_bytecode = True
 
 
 def sha(path):
@@ -45,8 +45,10 @@ def arguments():
     parser.add_argument("--quick", action="store_true", help="Render only the first inspection sheet.")
     args = parser.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
     args.output_dir = args.output_dir.resolve()
-    if not args.output_dir.is_relative_to(PROOF):
-        parser.error("Generated assets must stay under tmp/avatar-customization/asset-proof.")
+    if args.output_dir != PUBLIC and not args.output_dir.is_relative_to(PROOF):
+        parser.error("Generated assets must stay under tmp/avatar-customization/asset-proof or exactly public/face/v2.")
+    if args.output_dir == PUBLIC and (args.render or args.render_only):
+        parser.error("Production generation cannot write renders. Use the proof directory for render evidence.")
     if not 1 <= args.samples <= 256 or not 200 <= args.resolution <= 2048:
         parser.error("Use 1 to 256 samples and a width of 200 to 2048 pixels.")
     return args
@@ -127,14 +129,40 @@ def pinned(points, constraints):
             (points[:, 2] <= constraints["rearZMax"]))
 
 
+def evaluated_copy(source, name, subdiv):
+    source.hide_viewport = False
+    source.hide_set(False)
+    source.hide_render = False
+    if source.animation_data:
+        for driver in source.animation_data.drivers:
+            if driver.data_path.startswith("modifiers"):
+                driver.mute = True
+    for modifier in source.modifiers:
+        if modifier.type == "SUBSURF":
+            modifier.show_viewport = True
+            modifier.levels = subdiv
+            modifier.render_levels = subdiv
+    bpy.context.view_layer.update()
+    graph = bpy.context.evaluated_depsgraph_get()
+    evaluated = source.evaluated_get(graph)
+    mesh = bpy.data.meshes.new_from_object(evaluated, preserve_all_data_layers=True, depsgraph=graph)
+    if not mesh.vertices or not mesh.uv_layers:
+        raise RuntimeError(f"Source evaluation produced an empty mesh or no UVs for {name}")
+    mesh.transform(Matrix.Translation(Vector((0, 0, -1.18))) @ evaluated.matrix_world)
+    mesh.name = name
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    while len(mesh.uv_layers) > 1:
+        mesh.uv_layers.remove(mesh.uv_layers[-1])
+    mesh.uv_layers[0].name = "BaseUV"
+    return obj
+
+
 def source_lips(registry, locked):
-    spec = importlib.util.spec_from_file_location("rain_recipe", ROOT / "scripts/prepare-face.py")
-    recipe = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(recipe)
     bpy.ops.wm.open_mainfile(filepath=str(ROOT / registry["source"]["blend"]), use_scripts=False)
     bpy.context.scene.render.use_simplify = False
     source = bpy.data.objects["GEO-rain-head"]
-    neutral = recipe.evaluated_copy(source, "CorrespondenceNeutral", 1)
+    neutral = evaluated_copy(source, "CorrespondenceNeutral", 1)
 
     def points(obj):
         return np.array([(v.co.x, v.co.z, -v.co.y) for v in obj.data.vertices])
@@ -172,7 +200,7 @@ def source_lips(registry, locked):
         for key in keys.key_blocks:
             key.value = baseline_keys[key.name] + target["keys"].get(key.name, 0)
         source.data.update()
-        obj = recipe.evaluated_copy(source, name, 1)
+        obj = evaluated_copy(source, name, 1)
         assert len(obj.data.vertices) == len(neutral.data.vertices)
         assert len(obj.data.loops) == len(neutral.data.loops)
         assert all(a.vertex_index == b.vertex_index for a, b in zip(obj.data.loops, neutral.data.loops))
@@ -424,6 +452,13 @@ def texture_maps(registry, output):
         save_pixels(path, result, rgba[:, :, 3])
     for choice in registry["choices"]["eyes"].values():
         shutil.copyfile(ROOT / choice["source"], output / choice["map"])
+    if output != PUBLIC:
+        texture_sheets(registry, output)
+    return {str(path.relative_to(output)): {"bytes": path.stat().st_size, "sha256": sha(path),
+                                           "size": list(Image.open(path).size)} for path in sorted((output / "maps").glob("*.png"))}
+
+
+def texture_sheets(registry, output):
     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
     for group, filename, crops in [
         ("complexion", "contact-skin-map-details.png", [(0.43, 0.49, 0.57, 0.58), (0.44, 0.58, 0.56, 0.67)]),
@@ -439,25 +474,27 @@ def texture_maps(registry, output):
                 region = image.crop(tuple(round(v * (image.width if k % 2 == 0 else image.height)) for k, v in enumerate(crop)))
                 sheet.paste(region.resize((300, 220), Image.Resampling.LANCZOS), (i * 300, 38 + j * 220))
         sheet.save(output / filename)
-    return {str(path.relative_to(output)): {"bytes": path.stat().st_size, "sha256": sha(path),
-                                           "size": list(Image.open(path).size)} for path in sorted((output / "maps").glob("*.png"))}
 
 
-def frozen_files():
-    return {str(p.relative_to(ROOT)): sha(p) for p in sorted((ROOT / "public/face/v1").rglob("*")) if p.is_file()}
+def neutral_files():
+    return {str(p.relative_to(ROOT)): sha(p) for p in sorted(NEUTRAL.rglob("*")) if p.is_file()}
 
 
-def atlas_contract():
-    contract = json.loads((ROOT / "public/face/v1/asset.json").read_text())
+def atlas_contract(output, registry):
+    contract = json.loads((NEUTRAL / "asset.json").read_text())
     files = ["makeup-blank.png", *contract["paint"]["masks"].values()]
-    return {"id": "rain-front-v1", "directory": "public/face/v1", "publicPath": "/face/v1/",
+    for file in files:
+        destination = output / file
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(NEUTRAL / file, destination)
+    return {"id": registry["paintAtlas"], "directory": ".", "publicPath": "/face/v2/",
             "paint": contract["paint"], "landmarks": contract["landmarks"],
-            "files": {str(Path("public/face/v1") / p): sha(ROOT / "public/face/v1" / p) for p in files}}
+            "files": {file: sha(output / file) for file in files}}
 
 
 def build(args, registry):
     output = args.output_dir
-    original = frozen_files()
+    original = neutral_files()
     archive = ROOT / registry["source"]["archive"]
     assert sha(archive) == registry["source"]["archiveSha256"], "The licensed source archive checksum changed."
     blend = ROOT / registry["source"]["blend"]
@@ -479,20 +516,21 @@ def build(args, registry):
         meshes[mesh["name"]] = {"vertices": glb.document["accessors"][p["attributes"]["POSITION"]]["count"],
                                 "triangles": glb.document["accessors"][p["indices"]]["count"] // 3,
                                 "targets": mesh.get("extras", {}).get("targetNames", [])}
-    manifest = {"id": registry["asset"], "status": "temporary asset proof, not a released revision",
+    manifest = {"id": registry["asset"], "status": "generated runtime asset" if output == PUBLIC else "temporary asset proof, not a released revision",
                 "registrySha256": sha(args.registry), "glb": {"file": "head.glb", "sha256": sha(output / "head.glb"),
-                "bytes": (output / "head.glb").stat().st_size, "preservedV1BinaryPrefixBytes": original_binary_bytes},
+                "bytes": (output / "head.glb").stat().st_size, "preservedNeutralBinaryPrefixBytes": original_binary_bytes},
                 "source": registry["source"], "sourceBlendSha256": archived_blend,
-                "generatorSha256": sha(Path(__file__)), "neutralExporterSha256": sha(ROOT / "scripts/prepare-face.py"),
-                "paintAtlas": atlas_contract(), "meshes": meshes,
+                "generatorSha256": sha(Path(__file__)),
+                "paintAtlas": atlas_contract(output, registry), "meshes": meshes,
                 "triangles": sum(m["triangles"] for m in meshes.values()), "targets": targets, "maps": maps,
-                "frozenV1": original, "changes": ["Locked neutral GLB bytes and materials retained.",
+                "neutralAuthoringInputs": original, "changes": ["Locked neutral GLB bytes and materials retained.",
                 "Added bounded position and normal morph targets, with a fitted lash aperture target.",
                 "Added a separate ridged crown-bun mesh and fabric band.",
                 "Added offline authored complexion and hair recolors. These are not newly photographed skins."],
-                "limits": ["Procedural shapes and bun require lead art approval.", "Browser picking, paint replay, GPU memory, and device performance are outside this proof."]}
-    provenance = json.loads((ROOT / "public/face/provenance.json").read_text())
-    provenance["distribution"] = "Temporary Rain v2 avatar proof under tmp/avatar-customization/asset-proof."
+                "limits": ["Browser picking, paint replay, GPU memory, and device performance require runtime verification."]}
+    provenance = json.loads((NEUTRAL / "provenance.json").read_text())
+    provenance["distribution"] = ("Rain v2 portrait derivative under public/face/v2. No AI-generated artwork."
+                                  if output == PUBLIC else "Temporary Rain v2 avatar proof under tmp/avatar-customization/asset-proof.")
     provenance["sourceBlendSha256"] = archived_blend
     provenance["modifications"] += manifest["changes"][1:]
     dump(output / "provenance.json", provenance)
@@ -501,20 +539,20 @@ def build(args, registry):
         "Source: https://studio.blender.org/characters/rain/\n"
         "License: https://creativecommons.org/licenses/by/4.0/\n\n"
         "This is a modified Rain portrait. No AI-generated artwork.\n"
-        "The v1 portrait changes remain. V2 adds bounded face and lash morphs,\n"
+        "The neutral portrait changes remain. V2 adds bounded face and lash morphs,\n"
         "a fitted crown bun, and offline skin and hair recolors.\n"
         "The recolors are not newly photographed skins.\n"
         "Blender Foundation does not endorse this project.\n"
         "See provenance.json and asset.json for the source and changes.\n"
     )
     (output / "licenses").mkdir(exist_ok=True)
-    for path in (ROOT / "public/face/licenses").iterdir():
+    for path in (NEUTRAL / "licenses").iterdir():
         if path.is_file():
             shutil.copyfile(path, output / "licenses" / path.name)
     manifest["creditFile"] = "CREDITS.txt"
     manifest["provenanceFile"] = "provenance.json"
     dump(output / "asset.json", manifest)
-    assert frozen_files() == original, "Generation changed the frozen v1 files."
+    assert neutral_files() == original, "Generation changed the neutral authoring inputs."
     return manifest
 
 

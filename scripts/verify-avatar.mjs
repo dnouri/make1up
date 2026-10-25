@@ -8,11 +8,15 @@ import { MeshBVH } from 'three-mesh-bvh';
 
 const root = path.resolve(import.meta.dirname, '..');
 const proofRoot = path.join(root, 'tmp/avatar-customization/asset-proof');
+const publicRoot = path.join(root, 'public/face/v2');
+const neutralRoot = path.join(root, 'art/neutral');
 const arguments_ = process.argv.slice(2);
 assert(arguments_.every(arg => !arg.startsWith('--') || arg === '--geometry-only'), 'Unknown checker option.');
 const geometryOnly = arguments_.includes('--geometry-only');
 const directory = path.resolve(arguments_.find(arg => !arg.startsWith('--')) ?? proofRoot);
-assert(directory === proofRoot || directory.startsWith(`${proofRoot}/`), 'Only temporary proof directories are allowed.');
+assert(directory === publicRoot || directory === proofRoot || directory.startsWith(`${proofRoot}/`),
+  'Use public/face/v2 or a temporary proof directory.');
+assert(directory !== publicRoot || geometryOnly, 'Production assets have no render evidence. Use --geometry-only.');
 const registryPath = path.join(root, 'art/avatar-v2.json');
 const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
 const manifest = JSON.parse(fs.readFileSync(path.join(directory, 'asset.json'), 'utf8'));
@@ -124,42 +128,47 @@ function combinations(groups) {
   return groups.reduce((rows, [group, entries]) => rows.flatMap(row => Object.keys(entries).map(value => ({ ...row, [group]: value }))), [{}]);
 }
 
-const v1 = glb(path.join(root, registry.source.neutral));
+const neutral = glb(path.join(root, registry.source.neutral));
 const v2 = glb(path.join(directory, 'head.glb'));
 assert.equal(manifest.registrySha256, fileHash(registryPath));
 assert.equal(manifest.generatorSha256, fileHash(path.join(root, 'scripts/prepare-avatar.py')));
-assert.equal(manifest.neutralExporterSha256, fileHash(path.join(root, 'scripts/prepare-face.py')));
 assert.equal(manifest.sourceBlendSha256, fileHash(path.join(root, registry.source.blend)));
 assert.equal(manifest.glb.sha256, hash(v2.bytes));
 assert.equal(manifest.glb.bytes, v2.bytes.length);
-assert.deepEqual(v2.binary.subarray(0, v1.binary.length), v1.binary, 'Every original GLB binary byte must be retained.');
-for (const field of ['materials', 'images', 'textures', 'samplers']) assert.deepEqual(v2.document[field], v1.document[field], `Neutral ${field} changed.`);
-assert.deepEqual(v2.document.accessors.slice(0, v1.document.accessors.length), v1.document.accessors);
-assert.deepEqual(v2.document.bufferViews.slice(0, v1.document.bufferViews.length), v1.document.bufferViews);
-for (const node of v1.document.nodes) assert.deepEqual(v2.document.nodes.find(n => n.name === node.name), node);
-for (const [name, original] of Object.entries(v1.meshes)) {
+assert.equal(manifest.glb.preservedNeutralBinaryPrefixBytes, neutral.binary.length);
+assert.deepEqual(v2.binary.subarray(0, neutral.binary.length), neutral.binary, 'Every neutral GLB binary byte must be retained.');
+for (const field of ['materials', 'images', 'textures', 'samplers']) assert.deepEqual(v2.document[field], neutral.document[field], `Neutral ${field} changed.`);
+assert.deepEqual(v2.document.accessors.slice(0, neutral.document.accessors.length), neutral.document.accessors);
+assert.deepEqual(v2.document.bufferViews.slice(0, neutral.document.bufferViews.length), neutral.document.bufferViews);
+for (const node of neutral.document.nodes) assert.deepEqual(v2.document.nodes.find(n => n.name === node.name), node);
+for (const [name, original] of Object.entries(neutral.meshes)) {
   const { targets, ...primitive } = v2.meshes[name].primitive;
   assert.deepEqual(primitive, original.primitive, `${name} neutral attributes or indices changed.`);
   assert.deepEqual(v2.meshes[name].positions, original.positions);
 }
-for (const [file, expected] of Object.entries(manifest.frozenV1)) assert.equal(fileHash(path.join(root, file)), expected, `Frozen v1 changed at ${file}.`);
-const v1Files = fs.readdirSync(path.join(root, 'public/face/v1'), { recursive: true }).filter(file => fs.statSync(path.join(root, 'public/face/v1', file)).isFile());
-assert.equal(v1Files.length, Object.keys(manifest.frozenV1).length);
-const contract = JSON.parse(fs.readFileSync(path.join(root, 'public/face/v1/asset.json'), 'utf8'));
-assert.equal(hash(v1.bytes), contract.sha256);
-assert.equal(manifest.paintAtlas.directory, 'public/face/v1');
-assert.equal(manifest.paintAtlas.publicPath, '/face/v1/');
+const neutralFiles = fs.readdirSync(neutralRoot, { recursive: true }).filter(file => fs.statSync(path.join(neutralRoot, file)).isFile());
+const neutralInputs = Object.fromEntries(neutralFiles.map(file => [path.join('art/neutral', file), fileHash(path.join(neutralRoot, file))]));
+assert.deepEqual(manifest.neutralAuthoringInputs, neutralInputs, 'Neutral authoring inputs changed.');
+const contract = JSON.parse(fs.readFileSync(path.join(neutralRoot, 'asset.json'), 'utf8'));
+assert.equal(hash(neutral.bytes), contract.sha256);
+assert.equal(manifest.paintAtlas.id, registry.paintAtlas);
+assert.equal(manifest.paintAtlas.directory, '.');
+assert.equal(manifest.paintAtlas.publicPath, '/face/v2/');
+assert.equal(manifest.id, registry.asset);
+assert(!JSON.stringify(manifest).includes('/face/v1/'), 'The runtime manifest must not refer to an old asset directory.');
 assert(fs.readFileSync(path.join(directory, manifest.creditFile), 'utf8').includes(registry.source.credit));
 assert(fs.readFileSync(path.join(directory, manifest.creditFile), 'utf8').includes('https://creativecommons.org/licenses/by/4.0/'));
 assert.equal(JSON.parse(fs.readFileSync(path.join(directory, manifest.provenanceFile), 'utf8')).sourceBlendSha256, manifest.sourceBlendSha256);
 for (const file of ['CC-BY-4.0.txt', 'Rain-embedded-readme.txt']) {
-  assert.equal(fileHash(path.join(directory, 'licenses', file)), fileHash(path.join(root, 'public/face/licenses', file)));
+  assert.equal(fileHash(path.join(directory, 'licenses', file)), fileHash(path.join(neutralRoot, 'licenses', file)));
 }
 assert.deepEqual(manifest.paintAtlas.paint, contract.paint);
 assert.deepEqual(manifest.paintAtlas.landmarks, contract.landmarks);
+assert.deepEqual(Object.keys(manifest.paintAtlas.files).sort(), ['makeup-blank.png', ...Object.values(contract.paint.masks)].sort());
 for (const [file, expected] of Object.entries(manifest.paintAtlas.files)) {
-  assert.equal(fileHash(path.join(root, file)), expected);
-  const image = png(path.join(root, file));
+  assert.equal(fileHash(path.join(neutralRoot, file)), expected);
+  assert.equal(fileHash(path.join(directory, file)), expected);
+  const image = png(path.join(directory, file));
   assert.equal(image.width, contract.paint.textureSize);
   assert.equal(image.height, contract.paint.textureSize);
   for (let y = 0; y < image.height; y += 1) {
@@ -243,7 +252,7 @@ assert(registry.choices.hairStyle.ponytail.components.includes('HairTail'));
 assert(!registry.choices.hairStyle.bun.components.includes('HairTail'));
 assert(registry.choices.hairStyle.bun.components.includes('HairBun'));
 assert(v2.meshes.HairBun.vertexCount > 1000);
-assert(!v1.meshes.HairBun);
+assert(!neutral.meshes.HairBun);
 
 const lashTopology = [];
 for (const weight of [0, 1]) {
@@ -451,7 +460,7 @@ const correspondence = JSON.parse(fs.readFileSync(path.join(directory, 'source-c
 assert.equal(correspondence.matchedSplitVertices, face.vertexCount);
 assert(correspondence.maximumPositionErrorMeters < 1e-7);
 const renderFile = path.join(directory, 'render-index.json');
-let renderSummary = 'Explicit geometry-only preflight. Render evidence and the v1 verifier have not run in this invocation.';
+let renderSummary = 'Explicit geometry-only preflight. Render evidence has not been checked in this invocation.';
 if (!geometryOnly) {
   assert(fs.existsSync(renderFile), 'Missing render evidence. Run the generator with --render or explicitly request --geometry-only.');
   const evidence = JSON.parse(fs.readFileSync(renderFile, 'utf8'));
@@ -482,7 +491,7 @@ const report = { status: 'pass', nodeVersion: process.versions.node, nodeFlags: 
   glbBytes: v2.bytes.length, glbSha256: hash(v2.bytes), triangles,
   meshCount: Object.keys(v2.meshes).length, faceVertices: face.vertexCount,
   neutralBinaryPrefixUnchanged: true, allNeutralAccessorsAndMaterialsUnchanged: true,
-  frozenV1FilesUnchanged: Object.keys(manifest.frozenV1).length, frozenPaintAtlasUnchanged: true,
+  neutralAuthoringInputsUnchanged: Object.keys(manifest.neutralAuthoringInputs).length, frozenPaintAtlasUnchanged: true,
   projectedVertices: projected, excludedVertices: excluded, sourceCorrespondence: correspondence,
   targets: targetStats, supportedShapeCombinations: matrix.length,
   minimumTriangleAreaRatio: minimumAreaRatio, minimumTriangleNormalDot: minimumNormalDot,
@@ -490,19 +499,8 @@ const report = { status: 'pass', nodeVersion: process.versions.node, nodeFlags: 
   lashRootSamplesPerPose: roots.length, maximumLashRootGapMeters: maximumLashRootGap,
   closedMouthRaySamplesPerPose: mouthRays.length, lashTopology, componentClosure, textureQuality, neckMatch, maps: mapStats, renders: renderSummary,
   limits: 'Conservative local geometry, attachment, and mouth-ray checks. This is not an exhaustive self-intersection proof. Human art approval and real browser/device behavior remain separate gates.' };
-if (!geometryOnly) {
-  process.chdir(root);
-  const original = fs.readFileSync(path.join(root, 'scripts/verify-assets.mjs'), 'utf8');
-  const v1Report = path.join(directory, 'v1-verification');
-  const redirected = original
-    .replaceAll("'tmp/verification'", JSON.stringify(v1Report))
-    .replaceAll("'tmp/verification/assets.json'", JSON.stringify(path.join(v1Report, 'assets.json')));
-  assert.notEqual(redirected, original, 'The existing v1 verifier report paths changed. Review the redirection.');
-  await import(`data:text/javascript;base64,${Buffer.from(redirected).toString('base64')}`);
-  report.existingV1Verifier = { file: 'scripts/verify-assets.mjs', sha256: hash(original),
-    report: JSON.parse(fs.readFileSync(path.join(v1Report, 'assets.json'), 'utf8')),
-    onlyModification: 'Redirected its two report destinations into this proof directory. Every assertion ran unchanged.' };
-}
-fs.writeFileSync(path.join(directory, 'geometry-matrix.json'), JSON.stringify(matrix, null, 2) + '\n');
-fs.writeFileSync(path.join(directory, 'checks.json'), JSON.stringify(report, null, 2) + '\n');
+const reportDirectory = directory === publicRoot ? path.join(root, 'tmp/avatar-customization/public-v2-verification') : directory;
+fs.mkdirSync(reportDirectory, { recursive: true });
+fs.writeFileSync(path.join(reportDirectory, 'geometry-matrix.json'), JSON.stringify(matrix, null, 2) + '\n');
+fs.writeFileSync(path.join(reportDirectory, 'checks.json'), JSON.stringify(report, null, 2) + '\n');
 console.log(JSON.stringify(report, null, 2));

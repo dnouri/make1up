@@ -1,0 +1,29 @@
+{
+  "path": "assets/rain-v33.zip",
+  "source_page": "https://studio.blender.org/characters/rain/",
+  "download_url": "https://studio.blender.org/download-source/files/ee/a7/eea73e55dba1cea31c09848df6a794b2-4.zip",
+  "request_detail": "A fresh query parameter bypassed an expired cached signed redirect. The source endpoint returned the ZIP without login.",
+  "license": "CC-BY-4.0",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "license_file": "licenses/CC-BY-4.0.txt",
+  "embedded_notice": "licenses/Rain-embedded-readme.txt",
+  "required_credit_from_page": "Rain Rig (CC) Blender Foundation | studio.blender.org",
+  "caveat": "The public download is named rain-v33.zip and unpacks to Rain v3.3, but its .blend is named rain_v3.2.blend. This research retains the original names.",
+  "sha256": "80217f163f6392dc829233d63c2cfb5e1376775bc34101ad14f39631fea70d24",
+  "distribution": "Rain v2 portrait derivative under public/face/v2. No AI-generated artwork.",
+  "sourceLocalPath": "tmp/asset-research/assets/rain-v33.zip",
+  "sourceBlendLocalPath": "tmp/asset-research/assets/Rain v3.3/rain_v3.2.blend",
+  "modifications": [
+    "Evaluated neutral head, eyes, brows, lashes, hair, body and top. Removed rig, drivers and unsupported shaders.",
+    "Shifted head UV tile 1003 into 0..1 and resized original color textures. Kept freckles and lip color in the immutable base.",
+    "Cropped and lowered the shoulder silhouette. Matched 96 neck seam positions and normals.",
+    "Slimmed brows, lowered the ponytail, added small fixed eye catchlights, and chose lavender fabric.",
+    "Added a front-visible secondary paint UV and semantic masks. Rear and hidden polygons use a reserved transparent texel.",
+    "Converted to opaque glTF PBR materials. Omitted refractive cornea, teeth, tongue, facial rig and expressions.",
+    "Made optional hazel and olive iris recolors. Exported GLB in meters with +Y up and +Z forward.",
+    "Added bounded position and normal morph targets, with a fitted lash aperture target.",
+    "Added a separate ridged crown-bun mesh and fabric band.",
+    "Added offline authored complexion and hair recolors. These are not newly photographed skins."
+  ],
+  "sourceBlendSha256": "831ab6d837c679040285862b15dc9ee5180b018442a88aeaf92aaa7509b80258"
+}
