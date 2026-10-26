@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page, TestInfo } from "@playwright/test";
+import { appendStroke, captureStroke, encodeLook, limits, newLook } from "../src/look";
+import { decodeShare, encodeShare, lookbookLimits } from "../src/lookbook";
 
 type Point = readonly [number, number];
 const runtimeErrors = new WeakMap<Page, string[]>();
@@ -189,6 +191,74 @@ test("four passes in one native Blend gesture soften an Ink stripe more than one
   await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "ready", { timeout: 30_000 });
   await expect(page.locator("#gesture-count")).toHaveText("2 gestures");
   expect(samePNG(await png(page, info, "reloaded-blend"), four), "Reload replays the tagged document byte exactly").toBe(true);
+});
+
+test("native Blend beyond 8,192 points preserves exact history and shared replay", async ({ page }, info) => {
+  await openStudio(page);
+  await page.getByRole("button", { name: "Liner", exact: true }).click();
+  await page.getByRole("button", { name: "Ink color", exact: true }).click();
+  await stroke(page, info, stripe.from, stripe.to);
+  await expect(page.locator("#gesture-count")).toHaveText("1 gesture");
+  await page.getByRole("button", { name: "Share look", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Made to be remixed." })).toBeVisible();
+  await expect(page.getByLabel("Private remix link", { exact: true })).toHaveValue(/#make1up=/);
+  const capturedURL = await page.getByLabel("Private remix link", { exact: true }).inputValue();
+  const decoded = await decodeShare(new URL(capturedURL).hash);
+  if (!decoded.ok) throw new Error(decoded.error);
+  const source = decoded.value.strokes[0];
+  if (source === undefined) throw new Error("The native Liner gesture is missing.");
+  expect(source.brush.tool).toBe("liner");
+  const path = source.paths[0];
+  let seed = newLook();
+  for (let index = 0; index < 16; index += 1) {
+    const captured = captureStroke(`dense-${index}`, source.brush, [
+      Array.from({ length: 512 }, (_, point) => path[point % path.length]!),
+    ]);
+    if (!captured.ok) throw new Error(captured.error);
+    const appended = appendStroke(seed, captured.value);
+    if (!appended.ok) throw new Error(appended.error);
+    seed = appended.value;
+  }
+  expect(seed.strokes.reduce((sum, item) => sum + item.paths.flat().length, 0)).toBe(8_192);
+  expect(new TextEncoder().encode(encodeLook(seed)).length).toBeLessThan(limits.jsonBytes);
+  const shared = await encodeShare(seed);
+  if (!shared.ok) throw new Error(shared.error);
+  expect(shared.value).toMatch(/^#make1up=v1\.d\./);
+  expect(shared.value.length).toBeLessThan(lookbookLimits.shareCharacters);
+  await page.goto(new URL(shared.value, capturedURL).href);
+  await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "ready", { timeout: 30_000 });
+  await expect(page.locator("#gesture-count")).toHaveText("16 gestures");
+  const baseline = await png(page, info, "dense-baseline");
+  await selectBlend(page);
+  await stroke(page, info, stripe.from, stripe.to);
+  await expect(page.locator("#gesture-count")).toHaveText("17 gestures");
+  await expect(page.locator("#app-status")).not.toContainText("paint point limit");
+  const blended = await png(page, info, "dense-blended");
+  expect(samePNG(blended, baseline), "Blend changes the exported PNG").toBe(false);
+  expect(await rgbDifference(page, base64(baseline), base64(blended))).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Undo last edit", exact: true }).click();
+  await expect(page.locator("#gesture-count")).toHaveText("16 gestures");
+  expect(samePNG(await png(page, info, "dense-undone"), baseline)).toBe(true);
+  await page.getByRole("button", { name: "Redo last edit", exact: true }).click();
+  await expect(page.locator("#gesture-count")).toHaveText("17 gestures");
+  expect(samePNG(await png(page, info, "dense-redone"), blended)).toBe(true);
+
+  await page.getByRole("button", { name: "Share look", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Made to be remixed." })).toBeVisible();
+  await expect(page.getByLabel("Private remix link", { exact: true })).toHaveValue(/#make1up=/);
+  const blendedURL = await page.getByLabel("Private remix link", { exact: true }).inputValue();
+  const reopened = await decodeShare(new URL(blendedURL).hash);
+  if (!reopened.ok) throw new Error(reopened.error);
+  expect(reopened.value.strokes.slice(0, 16)).toEqual(seed.strokes);
+  expect(reopened.value.strokes[16]).toMatchObject({ brush: { tool: "blend" }, algorithm: "soften-v1" });
+  await page.goto(blendedURL);
+  await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "ready", { timeout: 30_000 });
+  await expect(page.locator("#gesture-count")).toHaveText("17 gestures");
+  expect(samePNG(await png(page, info, "dense-shared"), blended)).toBe(true);
+  await page.reload();
+  await expect(page.locator("#portrait-stage")).toHaveAttribute("data-state", "ready", { timeout: 30_000 });
+  await expect(page.locator("#gesture-count")).toHaveText("17 gestures");
+  expect(samePNG(await png(page, info, "dense-reloaded"), blended)).toBe(true);
 });
 
 for (const fixture of [
