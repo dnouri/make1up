@@ -25,6 +25,8 @@ The decoder validates exact document, identity, stroke, and brush fields at the 
 
 Each gesture stores its own brush settings and quantized UV paths. Changing the current brush does not change completed paint. Identity edits replace the identity without changing those paths. Clear removes makeup strokes, not identity choices.
 
+Captured and decoded strokes have one to eight nonempty paths, with at most 512 points across all paths in a gesture. A look admits at most 160 uniquely identified gestures, including pigment, erase, and Blend. Together, these rules bound a validated look to 81,920 stored points. No separate limit counts points across gestures. Append expects an already validated stroke. This structural bound does not establish acceptable worst-case replay time or memory use. A structurally valid look need not fit a persistence carrier.
+
 ## Session owns edits and submission
 
 `src/session.ts` has one pure reducer, `step`. `src/app.ts` owns the sole Session variable and dispatches actions through that reducer.
@@ -97,7 +99,9 @@ Workspace navigation is editing view state, not a look edit. The portrait stores
 
 `src/lookbook.ts` reads and writes only `make1up.lookbook.v2`. That lookbook starts empty. The app does not read, copy, or clear `make1up.lookbook.v1`. Older look documents are unsupported.
 
-The lookbook holds at most eight validated entries with thumbnails and content fingerprints. Save and share operations use the same canonical v2 look encoder. Storage failures leave the current look unchanged. Share fragments contain bounded raw or compressed JSON, and decompression has an explicit size limit. Container version markers describe storage or transport only. Every enclosed look must pass the v2 decoder.
+The lookbook holds at most eight validated entries with thumbnails and content fingerprints. Save and share operations use the same canonical v2 look encoder. Both refuse canonical JSON above 1,000,000 UTF-8 bytes before writing storage or compressing a share. The JSON reader and share decompressor retain that same byte limit. An oversized live look remains available for PNG download. A refused save leaves existing storage unchanged.
+
+Carrier checks are separate from enclosed JSON size. The local lookbook wrapper must fit 2,000,000 bytes, each thumbnail has a 160,000-character limit, and a share fragment must fit 20,000 characters. Compression cannot bypass the expanded JSON limit. Storage failures leave the current look unchanged. Container version markers describe storage or transport only. Every enclosed look must pass the v2 decoder.
 
 Sequential multi-tab saves and refresh checks do not establish atomic simultaneous writes. The app has no backend, account, service key, imported photo, runtime AI call, public gallery, or online voting service.
 

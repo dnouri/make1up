@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { appendStroke, captureStroke, defaultBrush, newLook } from "../src/look";
+import { appendStroke, captureStroke, defaultBrush, encodeLook, limits, lookFingerprint, newLook } from "../src/look";
 import type { Look } from "../src/look";
-import { decodeShare, encodeShare, readLookbook, removeSavedLook, saveLook } from "../src/lookbook";
+import { decodeShare, encodeShare, lookbookLimits, readLookbook, removeSavedLook, saveLook } from "../src/lookbook";
 import type { StoragePort } from "../src/lookbook";
 
 const thumbnail = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
@@ -35,6 +35,26 @@ function plainFragment(json: string): string {
   return `#make1up=v1.j.${btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`;
 }
 
+async function oversizedLook(): Promise<Look> {
+  const strokes = Array.from({ length: 64 }, (_, index) => {
+    const captured = captureStroke(`dense-${index}`, defaultBrush("liner"), [
+      Array.from({ length: 512 }, () => [0.24, 0.64]),
+    ]);
+    if (!captured.ok) throw new Error(captured.error);
+    return captured.value;
+  });
+  expect(strokes.length).toBeLessThanOrEqual(limits.strokes);
+  const look: Look = { ...newLook(), strokes };
+  const json = encodeLook(look);
+  expect(new TextEncoder().encode(json).length).toBeGreaterThan(limits.jsonBytes);
+  const compressed = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream("deflate"))).arrayBuffer();
+  let binary = "";
+  for (const byte of new Uint8Array(compressed)) binary += String.fromCharCode(byte);
+  const fragment = `#make1up=v1.d.${btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`;
+  expect(fragment.length).toBeLessThan(lookbookLimits.shareCharacters);
+  return look;
+}
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("local lookbook", () => {
@@ -58,6 +78,46 @@ describe("local lookbook", () => {
         }],
       },
     }]);
+  });
+
+  it("refuses an oversized enclosed document without changing existing storage", async () => {
+    const storage = new MemoryStorage();
+    expect(save(storage).ok).toBe(true);
+    const before = storage.raw;
+    const look = await oversizedLook();
+    const wrapper = JSON.parse(before!) as { version: number; entries: unknown[] };
+    wrapper.entries.unshift({
+      id: lookFingerprint(look), title: "Dense look", savedAt: 0, thumbnail, json: encodeLook(look),
+    });
+    expect(new TextEncoder().encode(JSON.stringify(wrapper)).length).toBeLessThan(lookbookLimits.storageBytes);
+    const saved = save(storage, look);
+    expect(saved.ok ? { ok: saved.ok } : saved).toEqual({
+      ok: false, error: "This look is too detailed to save. Download a PNG instead.",
+    });
+    expect(storage.raw).toBe(before);
+  });
+
+  it("reopens saved and shared documents above 8,192 points without changing canonical JSON", async () => {
+    const strokes = Array.from({ length: 17 }, (_, index) => {
+      const captured = captureStroke(`saved-${index}`, defaultBrush(index === 16 ? "blend" : "liner"), [
+        Array.from({ length: 512 }, () => [0.2, 0.4]),
+      ]);
+      if (!captured.ok) throw new Error(captured.error);
+      return captured.value;
+    });
+    const look: Look = { ...newLook(), strokes };
+    const json = encodeLook(look);
+    expect(new TextEncoder().encode(json).length).toBeLessThan(limits.jsonBytes);
+    const storage = new MemoryStorage();
+    expect(save(storage, look).ok).toBe(true);
+    const read = readLookbook(storage);
+    if (!read.ok || read.value[0] === undefined) throw new Error("The high-point saved look could not be reopened.");
+    expect(encodeLook(read.value[0].look)).toBe(json);
+    const shared = await encodeShare(look);
+    if (!shared.ok) throw new Error(shared.error);
+    const reopened = await decodeShare(shared.value);
+    if (!reopened.ok) throw new Error(reopened.error);
+    expect(encodeLook(reopened.value)).toBe(json);
   });
 
   it("saving the same content twice keeps one original entry and timestamp", () => {
@@ -136,6 +196,12 @@ describe("private share fragments", () => {
     expect(decoded.ok && decoded.value.strokes.map((stroke) => ({ id: stroke.id, color: stroke.brush.color, points: stroke.paths[0] }))).toEqual([{
       id: "first-cheek", color: "#cc5075", points: [[16384 / 65535, 42598 / 65535], [18350 / 65535, 41942 / 65535]],
     }]);
+  });
+
+  it("refuses oversized expanded JSON even when its compressed share fits", async () => {
+    expect(await encodeShare(await oversizedLook())).toEqual({
+      ok: false, error: "This look is too detailed for a share link. Download a PNG instead.",
+    });
   });
 
   it("uses a bounded uncompressed fallback when compression is unavailable", async () => {

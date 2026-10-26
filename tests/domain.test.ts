@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appendStroke, brushFromInput, captureStroke, decodeLook, decodeLookJSON,
-  defaultBrush, encodeLook, identityFromInput, lookFingerprint, newLook, palette, regions,
+  defaultBrush, encodeLook, identityFromInput, limits, lookFingerprint, newLook, palette, regions,
   themes, toolRegion, tools,
 } from "../src/look";
 import type { Brush, Look, Result, Stroke, UV } from "../src/look";
@@ -88,7 +88,7 @@ describe("look boundary", () => {
     expect(captureStroke("bad id", defaultBrush(), [[[0.2, 0.4]]])).toEqual({ ok: false, error: "A stroke ID must have one to 64 letters, digits, underscores, or hyphens." });
   });
 
-  it("caps JSON bytes, gesture count, and point count before replay", () => {
+  it("caps JSON bytes, gesture count, and points across a gesture's paths before replay", () => {
     expect(decodeLookJSON(" ".repeat(1_000_001))).toEqual({ ok: false, error: "The saved look exceeds the one megabyte limit." });
     expect(decodeLookJSON(`"${"é".repeat(500_000)}"`)).toEqual({ ok: false, error: "The saved look exceeds the one megabyte limit." });
     expect(decodeLook({ ...newLook(), strokes: Array.from({ length: 161 }, (_, i) => stroke(`s${i}`)) })).toEqual({
@@ -97,16 +97,64 @@ describe("look boundary", () => {
     expect(captureStroke("huge", defaultBrush(), [Array.from({ length: 513 }, () => [0.2, 0.4])])).toEqual({
       ok: false, error: "This gesture has too many points.",
     });
-    const path: UV[] = Array.from({ length: 512 }, () => [0.2, 0.4]);
-    const strokes = Array.from({ length: 17 }, (_, i) => value(captureStroke(`s${i}`, defaultBrush(), [path])));
-    expect(decodeLook({ ...newLook(), strokes })).toEqual({ ok: false, error: "The saved look has too many paint points." });
+    const excessivePaths: UV[][] = [256, 257].map((length) => Array.from({ length }, () => [0.2, 0.4]));
+    expect(captureStroke("split-huge", defaultBrush(), excessivePaths)).toEqual({
+      ok: false, error: "This gesture has too many points.",
+    });
+    expect(decodeLook({ ...newLook(), strokes: [{ ...stroke("split-huge"), paths: excessivePaths }] })).toEqual({
+      ok: false, error: "This gesture has too many points.",
+    });
     expect(captureStroke("paths", defaultBrush(), Array.from({ length: 9 }, () => [[0.2, 0.4]]))).toEqual({
       ok: false, error: "A gesture needs one to eight separate paths.",
     });
-    let full: Look = newLook();
-    for (const item of strokes.slice(0, 16)) full = value(appendStroke(full, item));
-    expect(full.strokes.length).toBe(16);
-    expect(appendStroke(full, stroke("extra"))).toEqual({ ok: false, error: "This look has reached its paint point limit." });
+    expect(decodeLook({ ...newLook(), strokes: [{
+      ...stroke("paths"), paths: Array.from({ length: 9 }, () => [[0.2, 0.4]]),
+    }] })).toEqual({ ok: false, error: "A gesture needs one to eight separate paths." });
+  });
+
+  it("appends a captured 14-point Blend after sixteen full pigment gestures", () => {
+    let look = newLook();
+    for (let index = 0; index < 16; index += 1) {
+      const pigment = value(captureStroke(`pigment-${index}`, defaultBrush("liner"), [
+        Array.from({ length: 512 }, () => [0.2, 0.4]),
+      ]));
+      look = value(appendStroke(look, pigment));
+    }
+    const before = encodeLook(look);
+    const blend = value(captureStroke("blend-over-makeup", defaultBrush("blend"), [
+      Array.from({ length: 14 }, () => [0.2, 0.4]),
+    ]));
+    const appended = value(appendStroke(look, blend));
+    expect(appended.strokes).toEqual([...look.strokes, blend]);
+    expect(appended.strokes[16]).toMatchObject({ id: "blend-over-makeup", algorithm: "soften-v1" });
+    expect(encodeLook(look)).toBe(before);
+    const json = encodeLook(appended);
+    expect(new TextEncoder().encode(json).length).toBeLessThan(limits.jsonBytes);
+    expect(encodeLook(value(decodeLookJSON(json)))).toBe(json);
+  });
+
+  it.each(["liner", "erase", "blend"] as const)("decodes and canonically round trips %s beyond 8,192 points", (tool) => {
+    const strokes = Array.from({ length: 17 }, (_, index) => value(captureStroke(
+      `saved-${index}`, defaultBrush(tool), [Array.from({ length: 512 }, () => [0.2, 0.4])],
+    )));
+    const fixture: Look = { ...newLook(), strokes };
+    const json = encodeLook(fixture);
+    expect(new TextEncoder().encode(json).length).toBeLessThan(limits.jsonBytes);
+    expect(value(decodeLook(fixture)).strokes).toEqual(strokes);
+    expect(encodeLook(value(decodeLookJSON(json)))).toBe(json);
+  });
+
+  it.each([8_178, 8_179])("appends a 14-point Blend after %i existing points", (points) => {
+    let look = newLook();
+    for (let remaining = points, index = 0; remaining > 0; index += 1) {
+      const count = Math.min(remaining, limits.pointsPerStroke);
+      look = value(appendStroke(look, value(captureStroke(`base-${index}`, defaultBrush(), [
+        Array.from({ length: count }, () => [0.2, 0.4]),
+      ]))));
+      remaining -= count;
+    }
+    const blend = value(captureStroke("blend", defaultBrush("blend"), [Array.from({ length: 14 }, () => [0.2, 0.4])]));
+    expect(value(appendStroke(look, blend)).strokes.at(-1)).toEqual(blend);
   });
 
   it("rejects invalid saved samples and settings through the JSON gate", () => {
@@ -122,10 +170,18 @@ describe("look boundary", () => {
     expect(valid.strokes.map((item) => item.id)).toEqual(["valid"]);
   });
 
-  it("applies the same limits to live append and rejects a repeated gesture", () => {
+  it("accepts 160 validated 512-point gestures through append and structural decode, but no extra gesture", () => {
+    const path: UV[] = Array.from({ length: limits.pointsPerStroke }, () => [0.24, 0.64]);
     let look: Look = newLook();
-    for (let i = 0; i < 160; i += 1) look = value(appendStroke(look, stroke(`s${i}`)));
+    for (let i = 0; i < limits.strokes; i += 1) {
+      look = value(appendStroke(look, value(captureStroke(`s${i}`, defaultBrush(), [path]))));
+    }
     expect(look.strokes.length).toBe(160);
+    expect(look.strokes.reduce((sum, item) => sum + item.paths.flat().length, 0)).toBe(81_920);
+    expect(value(decodeLook(look))).toEqual(look);
+    expect(decodeLook({ ...look, strokes: [...look.strokes, stroke("extra")] })).toEqual({
+      ok: false, error: "The saved look has too many gestures or no gesture list.",
+    });
     expect(appendStroke(look, stroke("extra"))).toEqual({
       ok: false, error: "This look has reached its gesture limit. Clear some makeup or start a new look.",
     });

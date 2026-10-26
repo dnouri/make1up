@@ -11,7 +11,6 @@ export const limits = Object.freeze({
   strokes: 160,
   pathsPerStroke: 8,
   pointsPerStroke: 512,
-  pointsPerLook: 8_192,
   history: 50,
   radiusMin: 0.003,
   radiusMax: 0.08,
@@ -261,16 +260,9 @@ export function newLook(): Look {
   return Object.freeze({ version: 2, asset: "rain-portrait-v2", identity: defaultIdentity, strokes: Object.freeze([]) });
 }
 
-function pointCount(stroke: Stroke): number {
-  return stroke.paths.reduce((sum, path) => sum + path.length, 0);
-}
-
 export function appendStroke(look: Look, stroke: Stroke): Result<Look> {
   if (look.strokes.some((item) => item.id === stroke.id)) return failure("That gesture was already applied.");
   if (look.strokes.length >= limits.strokes) return failure("This look has reached its gesture limit. Clear some makeup or start a new look.");
-  if (look.strokes.reduce((sum, item) => sum + pointCount(item), pointCount(stroke)) > limits.pointsPerLook) {
-    return failure("This look has reached its paint point limit.");
-  }
   return { ok: true, value: Object.freeze({ ...look, strokes: Object.freeze([...look.strokes, stroke]) }) };
 }
 
@@ -301,7 +293,6 @@ export function decodeLook(raw: unknown): Result<Look> {
   }
   const strokes: Stroke[] = [];
   const ids = new Set<string>();
-  let points = 0;
   for (const item of raw.strokes) {
     if (!record(item)) return failure("A saved gesture is not an object.");
     if (!exactKeys(item, item.algorithm === undefined
@@ -313,8 +304,6 @@ export function decodeLook(raw: unknown): Result<Look> {
     if (!stroke.ok) return stroke;
     if (ids.has(stroke.value.id)) return failure("A saved look repeats a gesture ID.");
     ids.add(stroke.value.id);
-    points += pointCount(stroke.value);
-    if (points > limits.pointsPerLook) return failure("The saved look has too many paint points.");
     strokes.push(stroke.value);
   }
   return { ok: true, value: Object.freeze({
