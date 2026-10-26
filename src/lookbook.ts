@@ -125,6 +125,9 @@ export function saveLook(storage: StoragePort, input: SaveInput): Result<SaveRec
   }
   const existing = readLookbook(storage);
   if (!existing.ok) return existing;
+  if (new TextEncoder().encode(encodeLook(input.look)).length > limits.jsonBytes) {
+    return failure("This look is too detailed to save. Download a PNG instead.");
+  }
   const id = lookFingerprint(input.look);
   const same = existing.value.find((entry) => entry.id === id);
   if (same !== undefined) {
@@ -195,6 +198,9 @@ async function readBounded(stream: ReadableStream<Uint8Array>, maximum: number):
 export async function encodeShare(look: Look): Promise<Result<string>> {
   const json = encodeLook(look);
   let bytes = new TextEncoder().encode(json);
+  if (bytes.length > limits.jsonBytes) {
+    return failure("This look is too detailed for a share link. Download a PNG instead.");
+  }
   let format = "j";
   if (typeof CompressionStream !== "undefined") {
     try {
